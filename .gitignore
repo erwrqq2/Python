@@ -14,3 +14,8 @@ data/
 *.log
 .pytest_cache/
 .ruff_cache/
+
+# Built indexes
+*.bin
+*.pkl
+*.fidx
