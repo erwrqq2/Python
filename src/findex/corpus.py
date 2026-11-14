@@ -53,7 +53,7 @@ def _iter_jsonl(path: Path) -> Iterator[str]:
                 log.warning("%s:%d: skipped bad JSON line (%s)", path, lineno, exc)
 
 
-def _iter_paths(root: Path) -> Iterator[Path]:
+def iter_paths(root: Path) -> Iterator[Path]:
     if root.is_file():
         yield root
         return
@@ -71,7 +71,7 @@ def count_documents(root: Path) -> int | None:
     (counting their documents would mean reading them).
     """
     count = 0
-    for path in _iter_paths(Path(root)):
+    for path in iter_paths(Path(root)):
         if path.suffix in JSONL_SUFFIXES:
             return None
         count += 1
@@ -86,7 +86,7 @@ def iter_documents(root: Path) -> Iterator[Document]:
     crashes because of one bad document.
     """
     doc_id = 0
-    for path in _iter_paths(Path(root)):
+    for path in iter_paths(Path(root)):
         if path.suffix in JSONL_SUFFIXES:
             for text in _iter_jsonl(path):
                 yield Document(doc_id, path, text)

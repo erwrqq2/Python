@@ -82,7 +82,7 @@ def save(index: Index, path: Path, fmt: Format = "pickle") -> None:
 
 
 @contextmanager
-def _gc_paused() -> Generator[None]:
+def gc_paused() -> Generator[None]:
     """Loading creates ~1M objects and no garbage; every automatic GC pass would
     scan them all again for nothing. Pausing GC makes load ~30% faster."""
     was_enabled = gc.isenabled()
@@ -115,7 +115,7 @@ def load(path: Path) -> Index:
     """Load an index saved by `save` (format detected from the file header)."""
     path = Path(path)
     data = path.read_bytes()  # FileNotFoundError propagates as is
-    with _gc_paused():
+    with gc_paused():
         if data.startswith(MAGIC):
             try:
                 return _load_binary(data)

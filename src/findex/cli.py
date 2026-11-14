@@ -40,6 +40,7 @@ from rich.table import Table
 from findex.corpus import Document, count_documents, iter_documents
 from findex.engines import EngineName
 from findex.index import Index, build_index
+from findex.parallel import ExecutorName, build_parallel
 from findex.query import QueryError, parse
 from findex.rank import ScorerName, Searcher, SearchResult, get_scorer
 from findex.stats import compute_stats
@@ -71,6 +72,12 @@ class EngineChoice(StrEnum):
     merge = "merge"
 
 
+class ExecutorChoice(StrEnum):
+    serial = "serial"
+    threads = "threads"
+    processes = "processes"
+
+
 class FormatChoice(StrEnum):
     binary = "binary"
     pickle = "pickle"
@@ -84,6 +91,13 @@ ENGINE_NAMES: Final[dict[EngineChoice, EngineName]] = {
     EngineChoice.set: "set",
     EngineChoice.merge: "merge",
 }
+EXECUTOR_NAMES: Final[dict[ExecutorChoice, ExecutorName]] = {
+    ExecutorChoice.serial: "serial",
+    ExecutorChoice.threads: "threads",
+    ExecutorChoice.processes: "processes",
+}
+# Processes win on a multi-core machine (see README, Lab 5); threads do not under the GIL.
+DEFAULT_EXECUTOR: Final = ExecutorChoice.processes
 FORMAT_NAMES: Final[dict[FormatChoice, Format]] = {
     FormatChoice.binary: "binary",
     FormatChoice.pickle: "pickle",
@@ -169,35 +183,59 @@ def index_cmd(
         bool, typer.Option("--positions", help="Store token positions (needed for phrases).")
     ] = False,
     limit: Annotated[int | None, typer.Option(help="Index only the first N documents.")] = None,
+    executor: Annotated[
+        ExecutorChoice, typer.Option(help="How to run build_partial over the chunks.")
+    ] = DEFAULT_EXECUTOR,
+    workers: Annotated[
+        int | None, typer.Option(min=1, help="Threads/processes [default: CPU count].")
+    ] = None,
 ) -> None:
-    """Build an index from a corpus and save it."""
+    """Build an index from a corpus and save it (in parallel by default)."""
     with expected_errors():
         if not corpus.exists():
             raise CliError(f"corpus not found: {corpus}")
         total = count_documents(corpus)
         if total is not None and limit is not None:
             total = min(total, limit)
-        start = time.perf_counter()
         columns = (
             TextColumn("{task.description}"),
             BarColumn(),
             MofNCompleteColumn(),
             TimeElapsedColumn(),
         )
+        start = time.perf_counter()
+        merge_seconds: float | None = None
         with Progress(*columns, console=err, transient=True) as progress:
-            docs = _with_progress(islice(iter_documents(corpus), limit), progress, total)
-            index = build_index(docs, positions=positions)
+            if total is None:  # JSON-lines corpus: documents are lines, not files -> serial
+                log.warning("JSON-lines corpus: building serially")
+                docs = _with_progress(islice(iter_documents(corpus), limit), progress, None)
+                index = build_index(docs, positions=positions)
+                used = "serial (json-lines)"
+            else:
+                task = progress.add_task("indexing", total=total)
+                index, stats = build_parallel(
+                    corpus,
+                    executor=EXECUTOR_NAMES[executor],
+                    workers=workers,
+                    positions=positions,
+                    limit=limit,
+                    on_chunk_done=lambda n: progress.advance(task, n),
+                )
+                merge_seconds = stats.merge_seconds
+                used = f"{stats.executor}, {stats.workers} workers, {stats.chunks} chunks"
         built = time.perf_counter()
         save(index, out_path, FORMAT_NAMES[fmt])
         saved = time.perf_counter()
 
+    merge_note = f" (merge {merge_seconds:.1f} s)" if merge_seconds is not None else ""
     table = Table(show_header=False, box=None)
     table.add_row("index", f"{out_path} ({out_path.stat().st_size / 2**20:.1f} MiB, {fmt.value})")
     table.add_row("documents", f"{index.num_docs:,}")
     table.add_row("terms", f"{len(index):,}")
     table.add_row("postings", f"{index.num_postings:,}")
     table.add_row("positions", "yes" if positions else "no")
-    table.add_row("time", f"build {built - start:.1f} s, save {saved - built:.1f} s")
+    table.add_row("build", used)
+    table.add_row("time", f"build {built - start:.1f} s{merge_note}, save {saved - built:.1f} s")
     out.print(table)
 
 

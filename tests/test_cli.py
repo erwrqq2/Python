@@ -16,7 +16,9 @@ runner = CliRunner()
 @pytest.fixture
 def built(tmp_path: Path, corpus_dir: Path) -> Path:
     out = tmp_path / "index.fidx"
-    result = runner.invoke(app, ["index", str(corpus_dir), "--out", str(out), "--positions"])
+    result = runner.invoke(
+        app, ["index", str(corpus_dir), "--out", str(out), "--positions", "--executor", "serial"]
+    )
     assert result.exit_code == 0, result.output
     return out
 
@@ -38,10 +40,19 @@ def test_index_reports_summary(built: Path) -> None:
     assert built.exists()
 
 
+def test_index_default_executor_is_processes(tmp_path: Path, corpus_dir: Path) -> None:
+    out = tmp_path / "index.fidx"
+    result = runner.invoke(app, ["index", str(corpus_dir), "-o", str(out), "--workers", "2"])
+    assert result.exit_code == 0, result.output
+    assert "processes, 2 workers" in result.stdout
+
+
 @pytest.mark.parametrize("fmt", ["binary", "pickle"])
 def test_index_formats(tmp_path: Path, corpus_dir: Path, fmt: str) -> None:
     out = tmp_path / f"index.{fmt}"
-    result = runner.invoke(app, ["index", str(corpus_dir), "-o", str(out), "--format", fmt])
+    result = runner.invoke(
+        app, ["index", str(corpus_dir), "-o", str(out), "--format", fmt, "--executor", "serial"]
+    )
     assert result.exit_code == 0, result.output
     assert "documents" in result.stdout and "4" in result.stdout
 
@@ -96,7 +107,12 @@ def test_expected_errors_are_one_line(
 
 def test_phrase_on_index_without_positions(tmp_path: Path, corpus_dir: Path) -> None:
     out = tmp_path / "plain.fidx"
-    assert runner.invoke(app, ["index", str(corpus_dir), "-o", str(out)]).exit_code == 0
+    assert (
+        runner.invoke(
+            app, ["index", str(corpus_dir), "-o", str(out), "--executor", "threads"]
+        ).exit_code
+        == 0
+    )
     result = runner.invoke(app, ["search", str(out), '"the whale"'])
     assert result.exit_code == 1
     assert "positions" in result.stderr
