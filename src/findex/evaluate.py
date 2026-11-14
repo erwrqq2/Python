@@ -14,12 +14,70 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Final, NotRequired, TypedDict, cast
 
-from findex.rank import SCORERS, Searcher
+from findex.index import Index
+from findex.rank import SCORERS, ScorerName, Searcher, SearchResult
 from findex.store import open_index
 
-K = 5
+K: Final = 5
+NAMES: Final[dict[ScorerName, str]] = {"bm25": "BM25", "tfidf": "TF-IDF"}
+
+
+class LabelledQuery(TypedDict):
+    query: str
+    relevant: list[str]  # file stems of documents that should be in the top 5
+    why: NotRequired[str]
+
+
+@dataclass(frozen=True)
+class QueryScore:
+    query: str
+    relevant: frozenset[int]
+    top: dict[ScorerName, list[SearchResult]]
+
+    def precision(self, scorer: ScorerName) -> float:
+        return sum(r.doc_id in self.relevant for r in self.top[scorer]) / K
+
+    @property
+    def best_possible(self) -> float:
+        return min(len(self.relevant), K) / K
+
+
+def load_queries(path: Path) -> list[LabelledQuery]:
+    # json.loads returns Any; the file format is documented above.
+    return cast(list[LabelledQuery], json.loads(path.read_text(encoding="utf-8")))
+
+
+def evaluate(index: Index, queries: list[LabelledQuery]) -> list[QueryScore]:
+    by_stem = {Path(m.path).stem: d for d, m in index.doc_meta.items()}
+    searcher = Searcher(index)
+    scores: list[QueryScore] = []
+    for q in queries:
+        relevant = frozenset(by_stem[s] for s in q["relevant"])
+        top: dict[ScorerName, list[SearchResult]] = {
+            name: searcher.search(q["query"], scorer, k=K) for name, scorer in SCORERS.items()
+        }
+        scores.append(QueryScore(q["query"], relevant, top))
+    return scores
+
+
+def format_table(scores: list[QueryScore]) -> str:
+    names = list(SCORERS)
+    lines = [
+        "| Query | Relevant | max | " + " | ".join(f"{NAMES[n]} P@5" for n in names) + " |",
+        "|---|---|---|" + "---|" * len(names),
+    ]
+    for s in scores:
+        cells = " | ".join(f"{s.precision(n):.1f}" for n in names)
+        lines.append(f"| `{s.query}` | {len(s.relevant)} | {s.best_possible:.1f} | {cells} |")
+    means = " | ".join(
+        f"**{sum(s.precision(n) for s in scores) / len(scores):.2f}**" for n in names
+    )
+    lines.append(f"| **mean** | | | {means} |")
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,39 +86,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("queries", type=Path)
     parser.add_argument("--details", action="store_true", help="print each top 5")
     args = parser.parse_args(argv)
-    queries = json.loads(args.queries.read_text(encoding="utf-8"))
 
     with open_index(args.index) as index:
-        by_stem = {Path(m.path).stem: d for d, m in index.doc_meta.items()}
-        searcher = Searcher(index)
-        rows, totals, details = [], dict.fromkeys(SCORERS, 0.0), []
-        for q in queries:
-            relevant = {by_stem[s] for s in q["relevant"]}
-            cells = []
-            for name, scorer in SCORERS.items():
-                top = searcher.search(q["query"], scorer, k=K)
-                hits = sum(r.doc_id in relevant for r in top)
-                totals[name] += hits / K
-                cells.append(f"{hits / K:.1f}")
-                details.append((q["query"], name, top, relevant))
-            best = min(len(relevant), K) / K
-            rows.append(
-                f"| `{q['query']}` | {len(relevant)} | {best:.1f} | " + " | ".join(cells) + " |"
-            )
-
-    names = {"tfidf": "TF-IDF", "bm25": "BM25"}
-    print("| Query | Relevant | max | " + " | ".join(names[n] + " P@5" for n in SCORERS) + " |")
-    print("|---|---|---|" + "---|" * len(SCORERS))
-    print("\n".join(rows))
-    means = " | ".join(f"**{totals[n] / len(queries):.2f}**" for n in SCORERS)
-    print(f"| **mean** | | | {means} |")
-
+        scores = evaluate(index, load_queries(args.queries))
+    print(format_table(scores))
     if args.details:
-        for query, name, top, relevant in details:
-            print(f"\n{query} [{names[name]}]")
-            for r in top:
-                mark = "+" if r.doc_id in relevant else "-"
-                print(f"  {mark} {r.score:7.3f} [{r.doc_id}] {r.title[:60]}")
+        for s in scores:
+            for name, top in s.top.items():
+                print(f"\n{s.query} [{NAMES[name]}]")
+                for r in top:
+                    mark = "+" if r.doc_id in s.relevant else "-"
+                    print(f"  {mark} {r.score:7.3f} [{r.doc_id}] {r.title[:60]}")
     return 0
 
 

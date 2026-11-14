@@ -15,19 +15,25 @@ from __future__ import annotations
 import argparse
 import random
 import timeit
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
-from findex.engines import ENGINES, MERGE, SET, Engine
+from findex.engines import ENGINE_NAMES, EngineName, intersect
 from findex.index import Index
 from findex.query import match, parse
 from findex.store import load
 
 
-def evaluate(query: str, index: Index, engine: Engine) -> list[int]:
+def evaluate(query: str, index: Index, engine: EngineName) -> list[int]:
     return match(parse(query), index, engine)
 
 
-def best_us(func, repeat: int = 5) -> float:
+def set_intersect(a: list[int], b: list[int]) -> list[int]:
+    return sorted(set(a) & set(b))
+
+
+def best_us(func: Callable[[], object], repeat: int = 5) -> float:
     timer = timeit.Timer(func)
     number, _ = timer.autorange()
     return min(timer.repeat(repeat=repeat, number=number)) / number * 1e6
@@ -58,12 +64,9 @@ def corpus_benchmark(index: Index) -> None:
     for label, (a, b) in pairs.items():
         for template in ("{a} {b}", "{a} OR {b}", "{a} NOT {b}"):
             query = template.format(a=a, b=b)
-            hits = evaluate(query, index, MERGE)
-            assert hits == evaluate(query, index, SET)
-            times = {
-                name: best_us(lambda e=engine, q=query: evaluate(q, index, e))
-                for name, engine in ENGINES.items()
-            }
+            hits = evaluate(query, index, "merge")
+            assert hits == evaluate(query, index, "set")
+            times = {name: best_us(partial(evaluate, query, index, name)) for name in ENGINE_NAMES}
             print(
                 f"| {label}: {a} ({index.df(a)}), {b} ({index.df(b)}) | `{query}` "
                 f"| {times['merge']:.1f} | {times['set']:.1f} | {len(hits)} |"
@@ -78,15 +81,15 @@ def synthetic_benchmark() -> None:
         universe = range(4 * n)
         a = sorted(rng.sample(universe, n))
         b = sorted(rng.sample(universe, n))
-        merge = best_us(lambda a=a, b=b: MERGE.and_(a, b), repeat=3)
-        set_ = best_us(lambda a=a, b=b: sorted(set(a) & set(b)), repeat=3)
+        merge = best_us(partial(intersect, a, b), repeat=3)
+        set_ = best_us(partial(set_intersect, a, b), repeat=3)
         print(f"| {n:,} & {n:,} | {merge:,.0f} | {set_:,.0f} | {set_ / merge:.2f} |")
     for n, m in ((10**6, 10), (10**6, 1000)):
         universe = range(4 * n)
         a = sorted(rng.sample(universe, n))
         b = sorted(rng.sample(universe, m))
-        merge = best_us(lambda a=a, b=b: MERGE.and_(a, b), repeat=3)
-        set_ = best_us(lambda a=a, b=b: sorted(set(a) & set(b)), repeat=3)
+        merge = best_us(partial(intersect, a, b), repeat=3)
+        set_ = best_us(partial(set_intersect, a, b), repeat=3)
         print(f"| {n:,} & {m:,} | {merge:,.0f} | {set_:,.0f} | {set_ / merge:.2f} |")
 
 

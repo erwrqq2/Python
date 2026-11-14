@@ -19,17 +19,23 @@ def make_index(docs: dict[int, dict[str, int]], lengths: dict[int, int] | None =
     return Index(postings, lengths, meta)
 
 
-def test_scorers_follow_the_protocol():
+def test_scorers_follow_the_protocol() -> None:
     assert all(isinstance(s, Scorer) for s in SCORERS.values())
-    assert isinstance(lambda term, posting, index: 1.0, Scorer)  # duck typing: any callable
+
+    def constant(term: str, posting: Posting, index: Index) -> float:
+        return 1.0
+
+    assert isinstance(constant, Scorer)  # duck typing: any callable with this signature
+    scorer: Scorer = constant  # ...and pyright accepts it statically, without inheritance
+    assert scorer("x", Posting(0, 1), make_index({0: {"x": 1}})) == 1.0
 
 
-def test_tfidf_formula():
+def test_tfidf_formula() -> None:
     ix = make_index({0: {"x": 3}, 1: {"y": 1}, 2: {"y": 1}, 3: {"y": 1}})
     assert TfIdf()("x", ix["x"][0], ix) == pytest.approx((1 + math.log(3)) * math.log(4))
 
 
-def test_bm25_formula():
+def test_bm25_formula() -> None:
     ix = make_index({0: {"x": 2, "y": 2}, 1: {"y": 4}})  # lengths 4 and 4, avg 4
     n, df, tf, k1, b = 2, 1, 2, 1.5, 0.75
     idf = math.log(1 + (n - df + 0.5) / (df + 0.5))
@@ -37,7 +43,7 @@ def test_bm25_formula():
     assert BM25()("x", ix["x"][0], ix) == pytest.approx(expected)
 
 
-def test_rare_term_beats_common_term():
+def test_rare_term_beats_common_term() -> None:
     docs = {i: {"common": 1, "filler": 9} for i in range(10)}
     docs[3] = {"common": 1, "rare": 1, "filler": 8}
     docs[7] = {"rare": 1, "filler": 9}
@@ -47,11 +53,11 @@ def test_rare_term_beats_common_term():
         assert {r.doc_id for r in top[:2]} == {3, 7}
 
 
-def test_bm25_saturates_tfidf_does_not():
+def test_bm25_saturates_tfidf_does_not() -> None:
     ix = make_index({0: {"x": 1}, 1: {"y": 1}}, lengths={0: 100, 1: 100})
     bm25, tfidf = BM25(), TfIdf()
 
-    def gain(scorer, tf):
+    def gain(scorer: Scorer, tf: int) -> float:
         return scorer("x", Posting(0, tf), ix) - scorer("x", Posting(0, tf - 1), ix)
 
     first_bm25 = bm25("x", Posting(0, 1), ix)
@@ -60,7 +66,7 @@ def test_bm25_saturates_tfidf_does_not():
     assert gain(tfidf, 20) > 0.02 * tfidf("x", Posting(0, 1), ix)  # log keeps growing
 
 
-def test_short_doc_beats_long_doc_with_bm25_only():
+def test_short_doc_beats_long_doc_with_bm25_only() -> None:
     ix = make_index({0: {"x": 1, "pad": 9}, 1: {"x": 1, "pad": 999}, 2: {"pad": 50}})
     bm25_top = Searcher(ix).search("x", BM25())
     assert [r.doc_id for r in bm25_top] == [0, 1]
@@ -70,7 +76,7 @@ def test_short_doc_beats_long_doc_with_bm25_only():
     assert BM25(b=0)("x", ix["x"][0], ix) == BM25(b=0)("x", ix["x"][1], ix)  # b=0: no norm
 
 
-def test_search_top_k_sorted_and_ordering():
+def test_search_top_k_sorted_and_ordering() -> None:
     ix = make_index({i: {"x": i + 1, "pad": 10} for i in range(20)})
     results = Searcher(ix).search("x", k=5)
     assert len(results) == 5
@@ -79,22 +85,22 @@ def test_search_top_k_sorted_and_ordering():
     assert SearchResult(1.0, 1, "a") == SearchResult(1.0, 1, "different title")
 
 
-def test_negated_only_query_returns_matches_with_zero_score(index):
+def test_negated_only_query_returns_matches_with_zero_score(index: Index) -> None:
     results = Searcher(index).search("NOT ship")
     assert [(r.doc_id, r.score) for r in results] == [(3, 0.0)]
 
 
-def test_match_cache_hit_is_logged(index, caplog):
+def test_match_cache_hit_is_logged(index: Index, caplog: pytest.LogCaptureFixture) -> None:
     searcher = Searcher(index)
     with caplog.at_level(logging.DEBUG):
         searcher.search("whale ship")
         searcher.search("Whale AND ship")  # same tree -> cache hit
-    assert searcher.cache_info.hits == 1 and searcher.cache_info.misses == 1
+    assert searcher.cache_hits == 1 and searcher.cache_misses == 1
     assert "Searcher.search took" in caplog.text
     assert "hits=1" in caplog.text
 
 
-def test_timed_keeps_metadata_and_logs_on_error(caplog):
+def test_timed_keeps_metadata_and_logs_on_error(caplog: pytest.LogCaptureFixture) -> None:
     @timed
     def boom():
         """Docstring survives."""

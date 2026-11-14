@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import logging
 import os
 import pickle
 import tempfile
@@ -30,6 +31,8 @@ from typing import Any
 from findex.corpus import Document, iter_documents
 from findex.index import Posting
 from findex.tokenize import tokenize
+
+log = logging.getLogger(__name__)
 
 VARIANTS = {
     "dataclass": "`list[Posting]`, plain `@dataclass`",
@@ -49,7 +52,7 @@ class PlainPosting:
 
 def build_postings(docs: Iterable[Document], variant: str) -> dict[str, Any]:
     if variant == "array":
-        arrays: defaultdict[str, tuple[array, array]] = defaultdict(
+        arrays: defaultdict[str, tuple[array[int], array[int]]] = defaultdict(
             lambda: (array("I"), array("I"))
         )
         for doc in docs:
@@ -105,14 +108,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m findex.memstudy", description=__doc__)
     parser.add_argument("root", type=Path)
     parser.add_argument("--limit", type=int, default=None)
-    parser.add_argument("--variant", choices=VARIANTS, action="append")
+    parser.add_argument("--variant", choices=list(VARIANTS), action="append")
     args = parser.parse_args(argv)
 
-    rows = []
+    logging.basicConfig(level=logging.INFO, format="%(message)s")  # progress -> stderr
+    rows: list[tuple[str, dict[str, float]]] = []
     for variant in args.variant or list(VARIANTS):
         m = measure(args.root, variant, args.limit)
         rows.append((variant, m))
-        print(f"{variant}: {m}", flush=True)
+        log.info("%s: %s", variant, m)
 
     print()
     print("| Postings representation | Peak memory (build) | Index file size | Load time |")

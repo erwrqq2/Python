@@ -38,24 +38,39 @@ import pickle
 import struct
 import sys
 from array import array
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from itertools import islice
 from pathlib import Path
+from typing import Final, Literal, TypedDict, cast
 
 from findex.index import DocMeta, Index, Posting
 from findex.timing import timed
 
-FORMATS = ("pickle", "binary")
-MAGIC = b"FIDX\x01"
-_HEADER_LEN = struct.Struct("<I")
+type Format = Literal["pickle", "binary"]
+FORMATS: Final[tuple[Format, ...]] = ("pickle", "binary")
+MAGIC: Final = b"FIDX\x01"
+_HEADER_LEN: Final = struct.Struct("<I")
+
+
+class IndexFormatError(Exception):
+    """The file exists but is not an index this version of findex can read."""
+
+
+class BinaryHeader(TypedDict):
+    """Shape of the JSON header of the binary format (lists in JSON, tuples here)."""
+
+    positions: bool
+    docs: list[tuple[int, str, str, int]]  # doc_id, path, title, length
+    terms: list[tuple[str, int, int, int]]  # term, byte offset, count, n_positions
+
 
 if array("I").itemsize != 4:  # pragma: no cover - true on all mainstream platforms
     raise ImportError("findex.store needs a 4-byte array('I')")
 
 
 @timed
-def save(index: Index, path: Path, fmt: str = "pickle") -> None:
+def save(index: Index, path: Path, fmt: Format = "pickle") -> None:
     path = Path(path)
     if fmt == "pickle":
         with path.open("wb") as f:
@@ -67,7 +82,7 @@ def save(index: Index, path: Path, fmt: str = "pickle") -> None:
 
 
 @contextmanager
-def _gc_paused() -> Iterator[None]:
+def _gc_paused() -> Generator[None]:
     """Loading creates ~1M objects and no garbage; every automatic GC pass would
     scan them all again for nothing. Pausing GC makes load ~30% faster."""
     was_enabled = gc.isenabled()
@@ -80,7 +95,7 @@ def _gc_paused() -> Iterator[None]:
 
 
 @contextmanager
-def open_index(path: Path) -> Iterator[Index]:
+def open_index(path: Path) -> Generator[Index]:
     """``with open_index("index.bin") as ix: ...`` — load, use, always close.
 
     Everything before ``yield`` is ``__enter__``; the ``finally`` block is
@@ -99,21 +114,27 @@ def open_index(path: Path) -> Iterator[Index]:
 def load(path: Path) -> Index:
     """Load an index saved by `save` (format detected from the file header)."""
     path = Path(path)
-    data = path.read_bytes()
+    data = path.read_bytes()  # FileNotFoundError propagates as is
     with _gc_paused():
         if data.startswith(MAGIC):
-            return _load_binary(data)
+            try:
+                return _load_binary(data)
+            except (struct.error, ValueError, KeyError, IndexError) as exc:
+                raise IndexFormatError(f"{path}: damaged binary index") from exc
         # See the module docstring: only ever do this with files you created yourself.
-        index = pickle.loads(data)  # noqa: S301
+        try:
+            index: object = pickle.loads(data)  # noqa: S301
+        except (pickle.UnpicklingError, EOFError, AttributeError, ImportError, ValueError) as exc:
+            raise IndexFormatError(f"{path}: not a findex index") from exc
     if not isinstance(index, Index):
-        raise TypeError(f"{path} does not contain a findex Index")
+        raise IndexFormatError(f"{path}: pickle does not contain a findex Index")
     return index
 
 
 # --- binary format ------------------------------------------------------------------
 
 
-def _le(arr: array) -> array:
+def _le(arr: array[int]) -> array[int]:
     """Make the array little-endian in place (no-op on x86/ARM)."""
     if sys.byteorder == "big":  # pragma: no cover
         arr.byteswap()
@@ -122,17 +143,17 @@ def _le(arr: array) -> array:
 
 def _save_binary(index: Index, path: Path) -> None:
     terms = sorted(index.postings)
-    header_terms = []
+    header_terms: list[tuple[str, int, int, int]] = []
     offset = 0
     for term in terms:
         plist = index.postings[term]
         n_pos = sum(len(p.positions) for p in plist) if index.has_positions else 0
-        header_terms.append([term, offset, len(plist), n_pos])
+        header_terms.append((term, offset, len(plist), n_pos))
         offset += 4 * (2 * len(plist) + n_pos)
-    header = {
+    header: BinaryHeader = {
         "positions": index.has_positions,
         "docs": [
-            [m.doc_id, m.path, m.title, index.doc_lengths[m.doc_id]]
+            (m.doc_id, m.path, m.title, index.doc_lengths[m.doc_id])
             for m in index.doc_meta.values()
         ],
         "terms": header_terms,
@@ -151,7 +172,7 @@ def _save_binary(index: Index, path: Path) -> None:
                 _le(array("I", [x for p in plist for x in p.positions])).tofile(f)
 
 
-def _uint32s(view: memoryview, start: int, count: int) -> array:
+def _uint32s(view: memoryview, start: int, count: int) -> array[int]:
     arr = array("I")
     arr.frombytes(view[start : start + 4 * count])
     return _le(arr)
@@ -161,7 +182,8 @@ def _load_binary(data: bytes) -> Index:
     pos = len(MAGIC)
     (header_len,) = _HEADER_LEN.unpack_from(data, pos)
     pos += _HEADER_LEN.size
-    header = json.loads(data[pos : pos + header_len])
+    # json.loads returns Any; the file was written by _save_binary with this exact shape.
+    header = cast(BinaryHeader, json.loads(data[pos : pos + header_len]))
     base = pos + header_len
     view = memoryview(data)
 

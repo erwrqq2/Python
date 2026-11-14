@@ -38,11 +38,11 @@ import re
 import unicodedata
 from collections.abc import Iterator
 
-APOSTROPHE_VARIANTS = "’‘ʼ`"
+APOSTROPHE_VARIANTS = "\u2019\u2018\u02bc`"
 APOSTROPHES = str.maketrans(dict.fromkeys(APOSTROPHE_VARIANTS, "'"))
 
 # One "letter-or-digit" possibly followed by combining marks (U+0300..U+036F).
-_ALNUM = r"(?:[^\W_][̀-ͯ]*)+"
+_ALNUM = r"(?:[^\W_\u02bc][\u0300-\u036f]*)+"
 TOKEN_RE = re.compile(rf"{_ALNUM}(?:['{APOSTROPHE_VARIANTS}]{_ALNUM})*")
 
 

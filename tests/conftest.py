@@ -28,7 +28,7 @@ def index_pos() -> Index:
 
 
 @pytest.fixture
-def corpus_dir(tmp_path) -> Path:
+def corpus_dir(tmp_path: Path) -> Path:
     root = tmp_path / "data"
     root.mkdir()
     for i, text in enumerate(TEXTS):

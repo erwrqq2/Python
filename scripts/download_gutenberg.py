@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import random
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -29,6 +29,8 @@ MIRROR = "https://gutenberg.pglaf.org"
 CATALOG_URL = f"{MIRROR}/cache/epub/feeds/pg_catalog.csv"
 BOOK_URL = MIRROR + "/cache/epub/{id}/pg{id}.txt"
 USER_AGENT = "findex-course-lab/0.1"
+
+log = logging.getLogger("download_gutenberg")
 
 START_MARK = "*** START OF"
 END_MARK = "*** END OF"
@@ -44,9 +46,9 @@ def fetch(url: str, timeout: float = 60) -> bytes:
 def load_catalog(path: Path) -> list[tuple[int, str]]:
     """Return (id, title) for every English text in the catalog."""
     if not path.exists():
-        print(f"downloading catalog -> {path}")
+        log.info("downloading catalog -> %s", path)
         path.write_bytes(fetch(CATALOG_URL, timeout=300))
-    books = []
+    books: list[tuple[int, str]] = []
     with path.open(encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             if row["Type"] == "Text" and row["Language"] == "en":
@@ -66,12 +68,13 @@ def strip_boilerplate(text: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Download a sample of Project Gutenberg books.")
     parser.add_argument("--out", type=Path, default=Path("data"))
     parser.add_argument("--count", type=int, default=150)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     books_dir = args.out / "gutenberg"
     books_dir.mkdir(parents=True, exist_ok=True)
@@ -91,10 +94,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             raw = fetch(BOOK_URL.format(id=book_id))
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            print(f"skip {book_id}: {exc}", file=sys.stderr)
+            log.warning("skip %s: %s", book_id, exc)
             failures += 1
             if failures >= MAX_FAILURES_IN_A_ROW:
-                print("network looks down, stopping (rerun to resume)", file=sys.stderr)
+                log.error("network looks down, stopping (rerun to resume)")
                 break
             continue
         finally:
@@ -105,10 +108,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         target.write_text(f"{title}\n\n{body}\n", encoding="utf-8")
         done += 1
-        print(f"[{done}/{args.count}] {book_id} {title[:60]}")
+        log.info("[%d/%d] %s %s", done, args.count, book_id, title[:60])
 
     total = sum(p.stat().st_size for p in books_dir.glob("*.txt"))
-    print(f"{done} books, {total / 2**20:.1f} MiB in {books_dir}")
+    log.info("%d books, %.1f MiB in %s", done, total / 2**20, books_dir)
     return 0
 
 

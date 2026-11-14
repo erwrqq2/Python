@@ -19,10 +19,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Final, Literal, Protocol, runtime_checkable
 
 from findex.corpus import read_text
-from findex.engines import SET, Engine
+from findex.engines import EngineName
 from findex.index import Index, Posting
 from findex.query import Node, match, parse
 from findex.snippet import make_snippet
@@ -78,8 +78,13 @@ class BM25:
         return idf * tf * (self.k1 + 1) / (tf + self.k1 * (1 - self.b + self.b * length_ratio))
 
 
-SCORERS: dict[str, Scorer] = {"bm25": BM25(), "tfidf": TfIdf()}
-DEFAULT_SCORER: Scorer = SCORERS["bm25"]
+type ScorerName = Literal["bm25", "tfidf"]
+SCORERS: Final[dict[ScorerName, Scorer]] = {"bm25": BM25(), "tfidf": TfIdf()}
+DEFAULT_SCORER: Final[Scorer] = SCORERS["bm25"]
+
+
+def get_scorer(name: ScorerName) -> Scorer:
+    return SCORERS[name]
 
 
 # --- results ------------------------------------------------------------------------
@@ -121,9 +126,9 @@ class Searcher:
     and keep every Searcher (and its index) alive for the life of the process.
     """
 
-    def __init__(self, index: Index, engine: Engine = SET) -> None:
+    def __init__(self, index: Index, engine: EngineName = "set") -> None:
         self.index = index
-        self.engine = engine
+        self.engine: EngineName = engine
         self.last_match_count = 0
         self._match_cached = lru_cache(maxsize=256)(self._match)
         self.match = timed(self._match_cached)
@@ -132,8 +137,12 @@ class Searcher:
         return frozenset(match(tree, self.index, self.engine))
 
     @property
-    def cache_info(self):  # noqa: ANN201 - functools._CacheInfo is private
-        return self._match_cached.cache_info()
+    def cache_hits(self) -> int:
+        return self._match_cached.cache_info().hits
+
+    @property
+    def cache_misses(self) -> int:
+        return self._match_cached.cache_info().misses
 
     @timed
     def search(
@@ -146,7 +155,7 @@ class Searcher:
         tree = parse(query) if isinstance(query, str) else query
         matched = self.match(tree)
         self.last_match_count = len(matched)
-        log.debug("match cache: %s", self.cache_info)
+        log.debug("match cache: %s", self._match_cached.cache_info())
 
         terms = unique(tree.terms())
         scores = dict.fromkeys(matched, 0.0)  # docs matched only through NOT keep score 0
@@ -157,7 +166,7 @@ class Searcher:
 
         # Best k by score; ties broken by the smaller doc_id, so output is deterministic.
         top = heapq.nlargest(k, scores.items(), key=lambda item: (item[1], -item[0]))
-        results = []
+        results: list[SearchResult] = []
         for doc_id, score in top:
             meta = self.index.doc_meta[doc_id]
             snippet = self.snippet(doc_id, terms) if snippets else ""

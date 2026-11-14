@@ -95,8 +95,11 @@ class Index(Mapping[str, list[Posting]]):
         # Mapping's default does `self[term]` inside try/except KeyError; a dict lookup is faster.
         return term in self.postings
 
-    __eq__ = object.__eq__  # identity, see class docstring (Mapping compares contents)
-    __hash__ = object.__hash__
+    def __eq__(self, other: object) -> bool:
+        return self is other  # identity, see class docstring (Mapping compares contents)
+
+    def __hash__(self) -> int:  # Mapping sets __hash__ = None; an identity hash is safe
+        return id(self)
 
     def __repr__(self) -> str:
         flags = "".join(

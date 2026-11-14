@@ -2,10 +2,11 @@ import dataclasses
 
 import pytest
 
-from findex.index import DocMeta, Posting, build_index
+from findex.corpus import Document
+from findex.index import DocMeta, Index, Posting, build_index
 
 
-def test_postings_sorted_with_tf(index):
+def test_postings_sorted_with_tf(index: Index) -> None:
     assert index.postings["whale"] == [Posting(0, 2), Posting(2, 1)]
     assert index.doc_ids("ship") == [0, 1, 2]
     for plist in index.postings.values():
@@ -13,12 +14,12 @@ def test_postings_sorted_with_tf(index):
         assert ids == sorted(ids) and len(ids) == len(set(ids))
 
 
-def test_unknown_term(index):
+def test_unknown_term(index: Index) -> None:
     assert index.doc_ids("dragon") == []
     assert index.df("dragon") == 0
 
 
-def test_doc_lengths_and_meta(index):
+def test_doc_lengths_and_meta(index: Index) -> None:
     # "Whales / The whale and the ship. The whale!" -> 8 tokens (title line included)
     assert index.doc_lengths[0] == 8
     assert index.doc_meta[2] == DocMeta(2, "doc2.txt", "Sharks")
@@ -26,7 +27,7 @@ def test_doc_lengths_and_meta(index):
     assert not index.has_positions
 
 
-def test_positions(index_pos):
+def test_positions(index_pos: Index) -> None:
     (p,) = [p for p in index_pos.postings["whale"] if p.doc_id == 0]
     assert p.tf == 2
     assert p.positions == (2, 7)  # whales=0 the=1 whale=2 and=3 the=4 ship=5 the=6 whale=7
@@ -34,16 +35,17 @@ def test_positions(index_pos):
     assert [(q.doc_id, q.tf) for q in index_pos.postings["ship"]] == [(0, 1), (1, 1), (2, 1)]
 
 
-def test_posting_is_frozen_slotted_and_hashable():
+def test_posting_is_frozen_slotted_and_hashable() -> None:
     p = Posting(1, 3)
     assert {p, Posting(1, 3)} == {p}  # equal values -> same hash -> one element
     assert not hasattr(p, "__dict__")
     with pytest.raises(dataclasses.FrozenInstanceError):
+        # Assigning to a frozen field is the point of this test; pyright rightly rejects it.
         p.tf = 4  # type: ignore[misc]
     assert hash(DocMeta(0, "a", "b")) == hash(DocMeta(0, "a", "b"))
 
 
-def test_mapping_protocol(index):
+def test_mapping_protocol(index: Index) -> None:
     assert len(index) == len(index.postings)
     assert "whale" in index and "dragon" not in index
     assert index["whale"] == index.postings["whale"]
@@ -55,20 +57,20 @@ def test_mapping_protocol(index):
     assert repr(index) == f"Index(terms={len(index)}, docs=4)"
 
 
-def test_stats(index):
+def test_stats(index: Index) -> None:
     assert index.num_docs == 4
     assert index.doc_length(0) == 8
     assert index.avg_doc_length == sum(index.doc_lengths.values()) / 4
     assert "avg_doc_length" in vars(index)  # cached_property stored it on the instance
 
 
-def test_identity_equality_and_hash(index, docs):
+def test_identity_equality_and_hash(index: Index, docs: list[Document]) -> None:
     other = build_index(docs)
     assert index == index and index != other  # resource, not value
     assert len({index, other}) == 2
 
 
-def test_close(index):
+def test_close(index: Index) -> None:
     index.close()
     assert index.closed and len(index) == 0
     assert repr(index).endswith("closed)")

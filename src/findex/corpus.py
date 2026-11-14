@@ -64,6 +64,20 @@ def _iter_paths(root: Path) -> Iterator[Path]:
             yield path
 
 
+def count_documents(root: Path) -> int | None:
+    """How many documents `iter_documents(root)` will yield, for a progress bar.
+
+    Cheap: only lists paths. Returns None when JSON-lines files are present
+    (counting their documents would mean reading them).
+    """
+    count = 0
+    for path in _iter_paths(Path(root)):
+        if path.suffix in JSONL_SUFFIXES:
+            return None
+        count += 1
+    return count
+
+
 def iter_documents(root: Path) -> Iterator[Document]:
     """Yield the corpus under `root` one `Document` at a time.
 

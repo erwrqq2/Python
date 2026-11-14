@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Final, Literal
 
 # --- two-pointer merge over sorted lists -------------------------------------------
 
@@ -81,23 +81,41 @@ def difference(a: Sequence[int], b: Sequence[int]) -> list[int]:
 
 # --- engines ------------------------------------------------------------------------
 
+type EngineName = Literal["merge", "set"]
+ENGINE_NAMES: Final[tuple[EngineName, ...]] = ("merge", "set")
+
 
 @dataclass(frozen=True)
-class Engine:
-    """How operands are represented and combined. `finish` returns sorted doc_ids."""
+class Engine[C]:
+    """How operands are represented (`C`) and combined. `finish` returns sorted doc_ids.
 
-    name: str
-    make: Callable[[Sequence[int]], Any]
-    and_: Callable[[Any, Any], Any]
-    or_: Callable[[Any, Any], Any]
-    not_: Callable[[Any, Any], Any]  # a AND NOT b
-    finish: Callable[[Any], list[int]]
+    Generic in the collection type, so the type checker knows MERGE works on
+    sequences and SET on sets — no ``Any`` in between.
+    """
+
+    name: EngineName
+    make: Callable[[Sequence[int]], C]
+    and_: Callable[[C, C], C]
+    or_: Callable[[C, C], C]
+    not_: Callable[[C, C], C]  # a AND NOT b
+    finish: Callable[[C], list[int]]
 
 
 def _as_is(ids: Sequence[int]) -> Sequence[int]:
     return ids
 
 
-MERGE = Engine("merge", _as_is, intersect, union, difference, list)
-SET = Engine("set", set, set.__and__, set.__or__, set.__sub__, sorted)
-ENGINES = {e.name: e for e in (MERGE, SET)}
+def _set_and(a: set[int], b: set[int]) -> set[int]:
+    return a & b
+
+
+def _set_or(a: set[int], b: set[int]) -> set[int]:
+    return a | b
+
+
+def _set_not(a: set[int], b: set[int]) -> set[int]:
+    return a - b
+
+
+MERGE: Final = Engine[Sequence[int]]("merge", _as_is, intersect, union, difference, list)
+SET: Final = Engine[set[int]]("set", set, _set_and, _set_or, _set_not, sorted)

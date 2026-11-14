@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: uv sync (Python from .python-version, deps from uv.lock)
+        run: uv sync --locked
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: pyright (strict)
+        run: uv run pyright
+
+      - name: pytest (all tests, including slow) with coverage
+        run: uv run pytest --cov --cov-report=term
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: The wheel installs into a clean environment and runs
+        shell: bash
+        run: uvx --from "$(ls dist/findex-*.whl)" findex --help
+
+      - name: Upload dist
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

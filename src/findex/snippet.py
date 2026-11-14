@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import Collection
 
 WIDTH = 80
-_APOSTROPHE = "['’‘ʼ`]"
+_APOSTROPHE = "['\u2019\u2018\u02bc`]"
 _WS_RE = re.compile(r"\s+")
 
 
@@ -54,7 +54,8 @@ def make_snippet(text: str, terms: Collection[str], width: int = WIDTH) -> str:
 
     start, end, _ = hits[best]
     lo, hi = max(0, start - width), min(len(text), end + width)
-    pieces, cursor = [], lo
+    pieces: list[str] = []
+    cursor = lo
     for h_start, h_end, _ in hits:
         if h_start >= lo and h_end <= hi:
             pieces += [text[cursor:h_start], "**", text[h_start:h_end], "**"]

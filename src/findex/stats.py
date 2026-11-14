@@ -79,7 +79,7 @@ def format_report(stats: CorpusStats, top: int, elapsed: float, peak: int, mode:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m findex.stats", description=__doc__.split("\n")[0]
+        prog="python -m findex.stats", description="Corpus statistics in one lazy pass."
     )
     parser.add_argument("root", type=Path, help="corpus directory or .txt/.jsonl file")
     parser.add_argument("--limit", type=int, default=None, help="use only the first N documents")
@@ -100,7 +100,10 @@ def main(argv: list[str] | None = None) -> int:
     tracemalloc.stop()
 
     mode = "eager (lists)" if args.eager else "lazy (generators)"
-    sys.stdout.reconfigure(errors="backslashreplace")  # type: ignore[union-attr]
+    # sys.stdout is typed TextIO, which has no reconfigure(); the real console stream does.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(errors="backslashreplace")
     print(format_report(stats, args.top, elapsed, peak, mode))
     return 0
 

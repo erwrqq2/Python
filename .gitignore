@@ -19,3 +19,6 @@ data/
 *.bin
 *.pkl
 *.fidx
+.hypothesis/
+.coverage
+coverage.xml

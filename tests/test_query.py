@@ -2,8 +2,9 @@
 
 import pytest
 
-from findex.engines import ENGINES
-from findex.query import And, Not, Or, Phrase, QueryError, Term, match, parse
+from findex.engines import ENGINE_NAMES, EngineName
+from findex.index import Index
+from findex.query import And, Node, Not, Or, Phrase, QueryError, Term, match, parse
 
 a, b, c, d = Term("a"), Term("b"), Term("c"), Term("d")
 
@@ -29,11 +30,11 @@ a, b, c, d = Term("a"), Term("b"), Term("c"), Term("d")
         ("a , b", And(a, b)),  # pure punctuation is ignored
     ],
 )
-def test_parse_trees(query, tree):
+def test_parse_trees(query: str, tree: Node) -> None:
     assert parse(query) == tree
 
 
-def test_lab_example():
+def test_lab_example() -> None:
     tree = parse('python AND (async OR await) NOT java "event loop"')
     expected = And(
         And(And(Term("python"), Or(Term("async"), Term("await"))), Not(Term("java"))),
@@ -42,7 +43,7 @@ def test_lab_example():
     assert tree == expected
 
 
-def test_operators_build_the_same_trees():
+def test_operators_build_the_same_trees() -> None:
     assert (a | b & ~c) == Or(a, And(b, Not(c))) == parse("a OR b NOT c")
     assert hash(parse("Whale ship")) == hash(parse("whale AND ship"))  # cache key
 
@@ -50,12 +51,12 @@ def test_operators_build_the_same_trees():
 @pytest.mark.parametrize(
     "query", ["", "   ", "AND a", "a OR", "a AND", "(a", "a)", "()", 'a "b', '""', "NOT", "..."]
 )
-def test_bad_queries(query):
+def test_bad_queries(query: str) -> None:
     with pytest.raises(QueryError):
         parse(query)
 
 
-@pytest.mark.parametrize("engine", ENGINES.values(), ids=ENGINES.keys())
+@pytest.mark.parametrize("engine", ENGINE_NAMES)
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
@@ -71,22 +72,22 @@ def test_bad_queries(query):
         ("dragon", []),
     ],
 )
-def test_evaluate(index, engine, query, expected):
+def test_evaluate(index: Index, engine: EngineName, query: str, expected: list[int]) -> None:
     assert match(parse(query), index, engine) == expected
 
 
-@pytest.mark.parametrize("engine", ENGINES.values(), ids=ENGINES.keys())
-def test_phrases(index_pos, engine):
+@pytest.mark.parametrize("engine", ENGINE_NAMES)
+def test_phrases(index_pos: Index, engine: EngineName) -> None:
     assert match(parse('"the whale"'), index_pos, engine) == [0]
     assert match(parse('"whale near the ship"'), index_pos, engine) == [2]
     assert match(parse('"whale the"'), index_pos, engine) == []  # words present, wrong order
     assert match(parse('"whale ship" OR shark'), index_pos, engine) == [2]
 
 
-def test_phrase_needs_positions(index):
+def test_phrase_needs_positions(index: Index) -> None:
     with pytest.raises(QueryError, match="positions"):
         match(parse('"the whale"'), index)
 
 
-def test_terms_skip_negated():
+def test_terms_skip_negated() -> None:
     assert list(parse('a "b c" NOT d (a OR NOT b)').terms()) == ["a", "b", "c", "a"]
