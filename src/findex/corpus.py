@@ -31,7 +31,7 @@ class Document(NamedTuple):
     text: str
 
 
-def _read_text(path: Path) -> str:
+def read_text(path: Path) -> str:
     """Decode a file as UTF-8; on bad bytes log a warning and replace them."""
     data = path.read_bytes()
     try:
@@ -79,7 +79,7 @@ def iter_documents(root: Path) -> Iterator[Document]:
                 doc_id += 1
             continue
         try:
-            text = _read_text(path)
+            text = read_text(path)
         except OSError as exc:
             log.warning("%s: cannot read (%s), skipped", path, exc)
             continue

@@ -17,9 +17,14 @@ import random
 import timeit
 from pathlib import Path
 
+from findex.engines import ENGINES, MERGE, SET, Engine
 from findex.index import Index
-from findex.search import ENGINES, MERGE, SET, evaluate
+from findex.query import match, parse
 from findex.store import load
+
+
+def evaluate(query: str, index: Index, engine: Engine) -> list[int]:
+    return match(parse(query), index, engine)
 
 
 def best_us(func, repeat: int = 5) -> float:

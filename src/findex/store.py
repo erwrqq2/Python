@@ -44,6 +44,7 @@ from itertools import islice
 from pathlib import Path
 
 from findex.index import DocMeta, Index, Posting
+from findex.timing import timed
 
 FORMATS = ("pickle", "binary")
 MAGIC = b"FIDX\x01"
@@ -53,6 +54,7 @@ if array("I").itemsize != 4:  # pragma: no cover - true on all mainstream platfo
     raise ImportError("findex.store needs a 4-byte array('I')")
 
 
+@timed
 def save(index: Index, path: Path, fmt: str = "pickle") -> None:
     path = Path(path)
     if fmt == "pickle":
@@ -77,6 +79,23 @@ def _gc_paused() -> Iterator[None]:
             gc.enable()
 
 
+@contextmanager
+def open_index(path: Path) -> Iterator[Index]:
+    """``with open_index("index.bin") as ix: ...`` — load, use, always close.
+
+    Everything before ``yield`` is ``__enter__``; the ``finally`` block is
+    ``__exit__`` and runs whether the body finishes, returns or raises. An
+    exception from the body is re-raised at the ``yield`` and propagates after
+    ``close()`` — nothing is swallowed.
+    """
+    index = load(path)
+    try:
+        yield index
+    finally:
+        index.close()
+
+
+@timed
 def load(path: Path) -> Index:
     """Load an index saved by `save` (format detected from the file header)."""
     path = Path(path)

@@ -16,7 +16,8 @@ def test_index_then_search(tmp_path, corpus_dir, fmt):
     py = [sys.executable, "-m"]
     build = [*py, "findex.index", str(corpus_dir), "--out", str(out), "--format", fmt]
     subprocess.run(build, check=True, capture_output=True)
-    search = [*py, "findex.search", str(out), "whale NOT shark"]
-    res = subprocess.run(search, check=True, capture_output=True, text=True)
-    assert "1 of 4 documents match" in res.stdout
+    search = [*py, "findex.search", str(out), "whale NOT shark", "--memory"]
+    res = subprocess.run(search, check=True, capture_output=True, text=True, cwd=corpus_dir.parent)
+    assert "1 matching documents" in res.stdout
+    assert "[   0] Whales" in res.stdout
     assert "peak memory" in res.stdout

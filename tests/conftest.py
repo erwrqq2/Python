@@ -34,3 +34,8 @@ def corpus_dir(tmp_path) -> Path:
     for i, text in enumerate(TEXTS):
         (root / f"doc{i}.txt").write_text(text, encoding="utf-8")
     return root
+
+
+@pytest.fixture
+def docs() -> list[Document]:
+    return make_docs()

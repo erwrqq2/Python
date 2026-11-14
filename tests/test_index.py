@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from findex.index import DocMeta, Posting
+from findex.index import DocMeta, Posting, build_index
 
 
 def test_postings_sorted_with_tf(index):
@@ -41,3 +41,34 @@ def test_posting_is_frozen_slotted_and_hashable():
     with pytest.raises(dataclasses.FrozenInstanceError):
         p.tf = 4  # type: ignore[misc]
     assert hash(DocMeta(0, "a", "b")) == hash(DocMeta(0, "a", "b"))
+
+
+def test_mapping_protocol(index):
+    assert len(index) == len(index.postings)
+    assert "whale" in index and "dragon" not in index
+    assert index["whale"] == index.postings["whale"]
+    with pytest.raises(KeyError):
+        index["dragon"]
+    assert set(index) == set(index.postings)
+    assert index.get("dragon") is None  # free from collections.abc.Mapping
+    assert dict(index.items())["ship"] == index["ship"]
+    assert repr(index) == f"Index(terms={len(index)}, docs=4)"
+
+
+def test_stats(index):
+    assert index.num_docs == 4
+    assert index.doc_length(0) == 8
+    assert index.avg_doc_length == sum(index.doc_lengths.values()) / 4
+    assert "avg_doc_length" in vars(index)  # cached_property stored it on the instance
+
+
+def test_identity_equality_and_hash(index, docs):
+    other = build_index(docs)
+    assert index == index and index != other  # resource, not value
+    assert len({index, other}) == 2
+
+
+def test_close(index):
+    index.close()
+    assert index.closed and len(index) == 0
+    assert repr(index).endswith("closed)")

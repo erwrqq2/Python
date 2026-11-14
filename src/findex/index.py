@@ -19,12 +19,14 @@ import logging
 import time
 import tracemalloc
 from collections import Counter, defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
+from functools import cached_property
 from itertools import islice
 from pathlib import Path
 
 from findex.corpus import Document, iter_documents
+from findex.timing import timed
 from findex.tokenize import tokenize
 
 TITLE_MAX = 120
@@ -48,20 +50,82 @@ class DocMeta:
     title: str
 
 
-@dataclass(slots=True)
-class Index:
-    postings: dict[str, list[Posting]]  # term -> postings sorted by doc_id
-    doc_lengths: dict[int, int]  # doc_id -> number of tokens (for BM25 in Lab 3)
-    doc_meta: dict[int, DocMeta]  # doc_id -> path/title
-    has_positions: bool = False
+class Index(Mapping[str, list[Posting]]):
+    """The inverted index as a read-only mapping ``term -> postings``.
+
+    Python syntax works on it because it implements the protocol methods::
+
+        len(index)          # __len__      number of distinct terms
+        "whale" in index    # __contains__
+        index["whale"]      # __getitem__  postings sorted by doc_id; KeyError if absent
+        for term in index   # __iter__
+        repr(index)         # Index(terms=146_829, docs=143, positions)
+
+    ``collections.abc.Mapping`` adds ``get``, ``keys``, ``items``, ``values`` from
+    those for free. Equality is *identity* (an index is a resource, not a value:
+    comparing 147k posting lists by content is never what you want), which also
+    keeps it hashable.
+    """
+
+    def __init__(
+        self,
+        postings: dict[str, list[Posting]],
+        doc_lengths: dict[int, int],
+        doc_meta: dict[int, DocMeta],
+        has_positions: bool = False,
+    ) -> None:
+        self.postings = postings  # term -> postings sorted by doc_id
+        self.doc_lengths = doc_lengths  # doc_id -> number of tokens
+        self.doc_meta = doc_meta  # doc_id -> path/title
+        self.has_positions = has_positions
+        self.closed = False
+
+    # --- Mapping protocol -----------------------------------------------------------
+
+    def __getitem__(self, term: str) -> list[Posting]:
+        return self.postings[term]
+
+    def __len__(self) -> int:
+        return len(self.postings)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.postings)
+
+    def __contains__(self, term: object) -> bool:
+        # Mapping's default does `self[term]` inside try/except KeyError; a dict lookup is faster.
+        return term in self.postings
+
+    __eq__ = object.__eq__  # identity, see class docstring (Mapping compares contents)
+    __hash__ = object.__hash__
+
+    def __repr__(self) -> str:
+        flags = "".join(
+            [", positions" if self.has_positions else "", ", closed" if self.closed else ""]
+        )
+        return f"Index(terms={len(self):_}, docs={self.num_docs:_}{flags})"
+
+    # --- statistics -----------------------------------------------------------------
 
     @property
     def num_docs(self) -> int:
-        return len(self.doc_meta)
+        return len(self.doc_lengths)
+
+    @cached_property
+    def avg_doc_length(self) -> float:
+        """Mean document length in tokens. BM25 needs it for every posting it scores,
+        so it is computed once per index and then stored in the instance __dict__."""
+        return sum(self.doc_lengths.values()) / self.num_docs if self.num_docs else 0.0
+
+    @cached_property
+    def _sorted_doc_ids(self) -> tuple[int, ...]:
+        return tuple(sorted(self.doc_lengths))
 
     @property
     def num_postings(self) -> int:
         return sum(map(len, self.postings.values()))
+
+    def doc_length(self, doc_id: int) -> int:
+        return self.doc_lengths[doc_id]
 
     def df(self, term: str) -> int:
         """Document frequency: in how many documents the term occurs."""
@@ -72,7 +136,16 @@ class Index:
         return [p.doc_id for p in self.postings.get(term, ())]
 
     def all_doc_ids(self) -> list[int]:
-        return sorted(self.doc_meta)
+        return list(self._sorted_doc_ids)
+
+    # --- resource -------------------------------------------------------------------
+
+    def close(self) -> None:
+        """Drop the data so the memory can be freed (see `store.open_index`)."""
+        self.postings, self.doc_lengths, self.doc_meta = {}, {}, {}
+        for name in ("avg_doc_length", "_sorted_doc_ids"):
+            self.__dict__.pop(name, None)
+        self.closed = True
 
 
 def title_of(doc: Document) -> str:
@@ -82,6 +155,7 @@ def title_of(doc: Document) -> str:
     return line[:TITLE_MAX] or doc.path.stem
 
 
+@timed
 def build_index(docs: Iterable[Document], *, positions: bool = False) -> Index:
     """Build the inverted index in a single streaming pass over `docs`."""
     postings: defaultdict[str, list[Posting]] = defaultdict(list)

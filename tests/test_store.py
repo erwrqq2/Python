@@ -2,7 +2,7 @@ import pickle
 
 import pytest
 
-from findex.store import FORMATS, MAGIC, load, save
+from findex.store import FORMATS, MAGIC, load, open_index, save
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
@@ -34,3 +34,21 @@ def test_load_rejects_foreign_pickle(tmp_path):
 def test_unknown_format(tmp_path, index):
     with pytest.raises(ValueError):
         save(index, tmp_path / "x", "yaml")
+
+
+def test_open_index_closes_even_on_error(tmp_path, index):
+    path = tmp_path / "index.bin"
+    save(index, path)
+    with pytest.raises(RuntimeError), open_index(path) as ix:
+        assert len(ix) > 0
+        seen = ix
+        raise RuntimeError("boom")
+    assert seen.closed
+
+
+def test_open_index_closes_on_normal_exit(tmp_path, index):
+    path = tmp_path / "index.bin"
+    save(index, path)
+    with open_index(path) as ix:
+        assert "whale" in ix
+    assert ix.closed

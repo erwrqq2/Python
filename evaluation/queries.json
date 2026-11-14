@@ -1,0 +1,22 @@
+[
+  {"query": "fishing trout flies", "relevant": ["46169", "76776"],
+   "why": "Fishing with Floating Flies; Minor tactics of the chalk stream"},
+  {"query": "insane asylum", "relevant": ["31185", "55104", "36450"],
+   "why": "History of the Insane in the British Isles; Colony Treatment of the Insane; Psychotherapy"},
+  {"query": "bees honey hive", "relevant": ["25185"],
+   "why": "Mysteries of Bee-keeping Explained"},
+  {"query": "maya yucatan", "relevant": ["19042", "39914"],
+   "why": "Animal Figures in the Maya Codices; Reports on the Maya Indians of Yucatan"},
+  {"query": "telegraph", "relevant": ["61533"],
+   "why": "The American Electro Magnetic Telegraph"},
+  {"query": "locomotive railway", "relevant": ["46229"],
+   "why": "The Life of George Stephenson"},
+  {"query": "\"civil war\" confederate", "relevant": ["19154", "6962"],
+   "why": "With Lee in Virginia; Military Reminiscences of the Civil War"},
+  {"query": "jesus disciples", "relevant": ["26361", "8827"],
+   "why": "The New Testament (common English version); Weymouth New Testament"},
+  {"query": "slavery slaves", "relevant": ["10464", "10075", "30158"],
+   "why": "A Child's Anti-Slavery Book; Narrative of Venture; The American Missionary (freedmen)"},
+  {"query": "apes monkeys", "relevant": ["67517"],
+   "why": "Apes and Monkeys: Their Life and Language"}
+]
