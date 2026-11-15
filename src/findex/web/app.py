@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable, MutableMapping
@@ -145,11 +146,31 @@ def _terms(q: str) -> list[str]:
 # --- the app ----------------------------------------------------------------------------
 
 
+def configure_logging(level: str) -> None:
+    """Send findex's log records to stdout, where Docker and Render collect them.
+
+    uvicorn only configures its own loggers; without this, records from `findex.*`
+    reach Python's last-resort handler, which drops everything below WARNING. Done
+    in the app (lifespan), not in the CLI: with ``--workers N`` every worker is a
+    fresh process that imports the app but not the CLI's logging setup.
+    """
+    logger = logging.getLogger("findex")
+    logger.setLevel(level)
+    if not any(getattr(h, "_findex", False) for h in logger.handlers):
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s [pid %(process)d] %(message)s")
+        )
+        handler._findex = True  # type: ignore[attr-defined]  # marker: added once per process
+        logger.addHandler(handler)
+        logger.propagate = False  # don't print twice if the root logger has a handler too
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         conf = settings or get_settings()
-        logging.getLogger("findex").setLevel(conf.log_level)
+        configure_logging(conf.log_level)
         index = load(conf.index_path)  # a missing/broken file stops start-up here
         app.state.index = index
         app.state.store = DocumentStore(index, conf.corpus_path)
