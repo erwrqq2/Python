@@ -29,6 +29,12 @@ class Document(NamedTuple):
     doc_id: int
     path: Path
     text: str
+    source: str | None = None  # e.g. the page URL of a crawled JSON-lines record
+
+    @property
+    def location(self) -> str:
+        """Where to show the document came from: its URL if known, else the file."""
+        return self.source or str(self.path)
 
 
 def read_text(path: Path) -> str:
@@ -41,14 +47,19 @@ def read_text(path: Path) -> str:
         return data.decode("utf-8-sig", errors="replace")
 
 
-def _iter_jsonl(path: Path) -> Iterator[str]:
-    """Yield the "text" field of each line of a JSON-lines file, lazily."""
+def _iter_jsonl(path: Path) -> Iterator[tuple[str, str | None]]:
+    """Yield ("text", "url") of each line of a JSON-lines file, lazily.
+
+    If a record has a "title", it becomes the first line of the text (that is where
+    `title_of` looks for it)."""
     with path.open(encoding="utf-8", errors="replace") as f:
         for lineno, line in enumerate(f, start=1):
             if not line.strip():
                 continue
             try:
-                yield json.loads(line)["text"]
+                record = json.loads(line)
+                text, title, url = record["text"], record.get("title"), record.get("url")
+                yield ("\n\n".join((title, text)) if title else text), url
             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                 log.warning("%s:%d: skipped bad JSON line (%s)", path, lineno, exc)
 
@@ -88,8 +99,8 @@ def iter_documents(root: Path) -> Iterator[Document]:
     doc_id = 0
     for path in iter_paths(Path(root)):
         if path.suffix in JSONL_SUFFIXES:
-            for text in _iter_jsonl(path):
-                yield Document(doc_id, path, text)
+            for text, url in _iter_jsonl(path):
+                yield Document(doc_id, path, text, url)
                 doc_id += 1
             continue
         try:

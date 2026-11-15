@@ -1,0 +1,46 @@
+[
+ {
+  "concurrency": 1,
+  "per_host": 1,
+  "delay": 0.0,
+  "pages": 200,
+  "requests": 201,
+  "errors": 0,
+  "wall": 28.069994499999893,
+  "pages_per_second": 7.125045546853672,
+  "peak_rss_mib": 45.109375
+ },
+ {
+  "concurrency": 5,
+  "per_host": 5,
+  "delay": 0.0,
+  "pages": 200,
+  "requests": 201,
+  "errors": 0,
+  "wall": 6.916614900000013,
+  "pages_per_second": 28.915873631965102,
+  "peak_rss_mib": 46.29296875
+ },
+ {
+  "concurrency": 20,
+  "per_host": 20,
+  "delay": 0.0,
+  "pages": 200,
+  "requests": 201,
+  "errors": 0,
+  "wall": 2.9620164000000386,
+  "pages_per_second": 67.52154114406694,
+  "peak_rss_mib": 49.30078125
+ },
+ {
+  "concurrency": 20,
+  "per_host": 2,
+  "delay": 0.1,
+  "pages": 200,
+  "requests": 201,
+  "errors": 0,
+  "wall": 21.07555830000001,
+  "pages_per_second": 9.48966476103292,
+  "peak_rss_mib": 45.3046875
+ }
+]

@@ -1,0 +1,4 @@
+2026-11-15 14:44:57,973 INFO    findex.crawler.robots: robots.txt https://books.toscrape.com/robots.txt: HTTP 404, no restrictions
+2026-11-15 14:44:58,385 INFO    findex.crawler.urls: 200    51294B   0.41s try=1 depth=0 https://books.toscrape.com/
+2026-11-15 14:44:58,536 INFO    findex.crawler.urls: 200    51294B   0.15s try=1 depth=1 https://books.toscrape.com/index.html
+2026-11-15 14:44:58,745 INFO    findex.crawler.urls: 200    37009B   0.15s try=1 depth=1 https://books.toscrape.com/catalogue/category/books/travel_2/index.html

@@ -17,27 +17,31 @@ call ``logging.getLogger(__name__)``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from collections import Counter
 from collections.abc import Generator, Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import aclosing, contextmanager, suppress
 from enum import StrEnum
 from importlib.metadata import PackageNotFoundError, version
 from itertools import islice
 from pathlib import Path
 from typing import Annotated, Final, TypedDict
 
+import httpx
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.logging import RichHandler
 from rich.markup import escape
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from findex.corpus import Document, count_documents, iter_documents
+from findex.crawler import CrawlConfig, CrawlStats, FetchResult, canonicalize, crawl
 from findex.engines import EngineName
 from findex.index import Index, build_index
 from findex.parallel import ExecutorName, build_parallel
@@ -134,6 +138,7 @@ def expected_errors() -> Generator[None]:
 def setup_logging(verbosity: int) -> None:
     level = {0: logging.WARNING, 1: logging.INFO}.get(verbosity, logging.DEBUG)
     handler = RichHandler(console=err, show_time=False, show_path=False, markup=False)
+    handler.setLevel(level)  # the console shows only this level; file logs may keep more
     logging.basicConfig(level=level, format="%(name)s: %(message)s", handlers=[handler], force=True)
 
 
@@ -359,3 +364,153 @@ def stats_cmd(
     for rank, (term, count) in enumerate(ranked, start=1):
         terms.add_row(str(rank), escape(term), f"{count:,}")
     out.print(terms)
+
+
+# --- findex crawl -----------------------------------------------------------------------
+
+# Tests inject an httpx.MockTransport here; None = the real network.
+crawl_transport: httpx.AsyncBaseTransport | None = None
+
+
+class CrawlRecord(TypedDict):
+    """One line of the crawl JSON-lines file (read back by `iter_documents`)."""
+
+    url: str
+    title: str
+    text: str
+    fetched_at: str
+    status: int
+    depth: int
+
+
+def _crawl_panel(stats: CrawlStats, config: CrawlConfig) -> Table:
+    error_style = "bold red" if stats.errors else "bold green"
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_row(
+        f"[bold]pages[/] {stats.pages}/{config.max_pages}",
+        f"[bold]{stats.pages_per_second:.1f}[/] pages/s",
+        f"in flight [bold]{stats.in_flight}[/]",
+        f"queue [bold]{stats.queued}[/]",
+        f"errors [{error_style}]{stats.errors}[/]",
+        f"robots-blocked {stats.robots_blocked}",
+        f"{stats.elapsed:.0f} s",
+    )
+    return table
+
+
+def _log_fetch(result: FetchResult, depth: int) -> None:
+    status = str(result.status) if result.status is not None else "ERR"
+    note = f"  ({result.error})" if result.error else ""
+    logging.getLogger("findex.crawler.urls").info(
+        "%s %8dB %6.2fs try=%d depth=%d %s%s",
+        status,
+        len(result.body),
+        result.elapsed,
+        result.attempts,
+        depth,
+        result.url,
+        note,
+    )
+
+
+async def _crawl_to_file(
+    seeds: list[str], config: CrawlConfig, out_path: Path, log_path: Path
+) -> CrawlStats:
+    """Crawl and stream pages to JSON lines; nothing but the current page is kept in memory."""
+    stats = CrawlStats()
+    file_log = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    file_log.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+    watched = [logging.getLogger("findex.crawler"), logging.getLogger("asyncio")]
+    for logger in watched:
+        logger.addHandler(file_log)
+    logging.getLogger("findex.crawler").setLevel(logging.INFO)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with (
+            out_path.open("w", encoding="utf-8") as out,
+            Live(_crawl_panel(stats, config), console=err, auto_refresh=False) as live,
+        ):
+
+            async def ticker() -> None:  # redraw from inside the event loop, no extra thread
+                while True:
+                    live.update(_crawl_panel(stats, config), refresh=True)
+                    await asyncio.sleep(0.25)
+
+            tick = asyncio.create_task(ticker())
+            try:
+                pages = crawl(
+                    seeds, config, stats=stats, on_fetch=_log_fetch, transport=crawl_transport
+                )
+                async with aclosing(pages):  # Ctrl+C or an error: workers and client close now
+                    async for page in pages:
+                        record: CrawlRecord = {
+                            "url": page.url,
+                            "title": page.title,
+                            "text": page.text,
+                            "fetched_at": page.fetched_at,
+                            "status": page.status,
+                            "depth": page.depth,
+                        }
+                        # A few KB into a buffered file: microseconds, not a blocking stall
+                        # (`--debug` confirms no callback holds the loop for 100 ms).
+                        print(json.dumps(record, ensure_ascii=False), file=out)
+            finally:
+                tick.cancel()
+                with suppress(asyncio.CancelledError):
+                    await tick
+                live.update(_crawl_panel(stats, config), refresh=True)
+    finally:
+        for logger in watched:
+            logger.removeHandler(file_log)
+        file_log.close()
+    return stats
+
+
+@app.command("crawl")
+def crawl_cmd(
+    seeds: Annotated[list[str], typer.Argument(help="Start URL(s).")],
+    out_path: Annotated[Path, typer.Option("--out", "-o", help="JSON-lines output.")] = Path(
+        "data/crawl.jsonl"
+    ),
+    log_path: Annotated[Path, typer.Option("--log", help="Per-URL status log.")] = Path(
+        "crawl.log"
+    ),
+    max_pages: Annotated[int, typer.Option(min=1, help="Stop after this many pages.")] = 500,
+    concurrency: Annotated[int, typer.Option(min=1, help="Requests in flight, all hosts.")] = 10,
+    per_host: Annotated[int, typer.Option(min=1, help="Requests in flight per host.")] = 4,
+    delay: Annotated[
+        float, typer.Option(min=0.0, help="Min seconds between requests to one host.")
+    ] = 0.1,
+    timeout: Annotated[float, typer.Option(min=0.1, help="Seconds per attempt.")] = 10.0,
+    max_depth: Annotated[int | None, typer.Option(help="Link depth limit.")] = None,
+    domain: Annotated[
+        list[str] | None, typer.Option(help="Allowed host (repeatable) [default: seed hosts].")
+    ] = None,
+    debug: Annotated[
+        bool, typer.Option(help="asyncio debug mode: report callbacks blocking the loop.")
+    ] = False,
+) -> None:
+    """Crawl politely and stream pages to JSON lines (index them with `findex index`)."""
+    config = CrawlConfig(
+        max_pages=max_pages,
+        concurrency=concurrency,
+        per_host=per_host,
+        delay=delay,
+        timeout=timeout,
+        max_depth=max_depth,
+        allowed_domains=frozenset(d.lower() for d in domain) if domain else None,
+    )
+    with expected_errors():
+        bad = [s for s in seeds if canonicalize(s) is None]
+        if bad:
+            raise CliError(f"not an http(s) URL: {bad[0]}")
+        stats = asyncio.run(_crawl_to_file(seeds, config, out_path, log_path), debug=debug)
+
+    blocked = f"{stats.robots_blocked} blocked by robots.txt, {stats.skipped} not HTML"
+    table = Table(show_header=False, box=None)
+    table.add_row("pages", f"{stats.pages:,} -> {out_path}")
+    table.add_row("requests", f"{stats.requests:,} ({stats.errors} errors, {blocked})")
+    table.add_row("time", f"{stats.elapsed:.1f} s, {stats.pages_per_second:.1f} pages/s")
+    table.add_row("log", str(log_path))
+    table.add_row("next", f"findex index {out_path} --out crawl.fidx")
+    out.print(table)

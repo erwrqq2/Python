@@ -179,7 +179,7 @@ def build_index(docs: Iterable[Document], *, positions: bool = False) -> Index:
             for term, tf in counts.items():
                 postings[term].append(Posting(doc.doc_id, tf))
         doc_lengths[doc.doc_id] = length
-        doc_meta[doc.doc_id] = DocMeta(doc.doc_id, str(doc.path), title_of(doc))
+        doc_meta[doc.doc_id] = DocMeta(doc.doc_id, doc.location, title_of(doc))
 
     return Index(dict(postings), doc_lengths, doc_meta, positions)
 

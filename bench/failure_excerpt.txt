@@ -1,0 +1,7 @@
+14:46:18,945 WARNING fetch: retry https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html in 0.55s (attempt 1/3 failed: timeout after 0.5s)
+14:46:20,015 WARNING fetch: retry https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html in 1.04s (attempt 2/3 failed: timeout after 0.5s)
+14:46:21,561 INFO    urls: ERR        0B   3.13s try=3 depth=1 https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html  (timeout after 0.5s)
+14:46:22,926 WARNING fetch: retry https://books.toscrape.com/catalogue/category/books/self-help_41/index.html in 0.67s (attempt 1/3 failed: timeout after 0.5s)
+14:46:24,127 WARNING fetch: retry https://books.toscrape.com/catalogue/category/books/self-help_41/index.html in 1.24s (attempt 2/3 failed: timeout after 0.5s)
+14:46:25,514 INFO    urls: 200    27997B   3.10s try=3 depth=1 https://books.toscrape.com/catalogue/category/books/self-help_41/index.html
+14:46:29,250 INFO    crawl: crawl finished: 59 pages, 13 errors, 73 requests in 11.8 s
