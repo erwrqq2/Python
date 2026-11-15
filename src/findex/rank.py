@@ -15,7 +15,7 @@ from __future__ import annotations
 import heapq
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -126,9 +126,15 @@ class Searcher:
     and keep every Searcher (and its index) alive for the life of the process.
     """
 
-    def __init__(self, index: Index, engine: EngineName = "set") -> None:
+    def __init__(
+        self,
+        index: Index,
+        engine: EngineName = "set",
+        texts: Callable[[int], str | None] | None = None,
+    ) -> None:
         self.index = index
         self.engine: EngineName = engine
+        self._texts = texts  # doc_id -> full text, for snippets (default: read .txt files)
         self.last_match_count = 0
         self._match_cached = lru_cache(maxsize=256)(self._match)
         self.match = timed(self._match_cached)
@@ -174,6 +180,9 @@ class Searcher:
         return results
 
     def snippet(self, doc_id: int, terms: list[str]) -> str:
+        if self._texts is not None:
+            text = self._texts(doc_id)
+            return make_snippet(text, terms) if text else ""
         path = Path(self.index.doc_meta[doc_id].path)
         if path.suffix != ".txt" or not path.exists():
             return ""  # JSON-lines documents have no file of their own

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections import Counter
@@ -514,3 +515,43 @@ def crawl_cmd(
     table.add_row("log", str(log_path))
     table.add_row("next", f"findex index {out_path} --out crawl.fidx")
     out.print(table)
+
+
+# --- findex serve -----------------------------------------------------------------------
+
+
+def _default_port() -> int:
+    return int(os.environ.get("PORT", "8000"))  # platforms like Render set PORT
+
+
+@app.command("serve")
+def serve_cmd(
+    port: Annotated[int, typer.Option(help="Port [default: $PORT or 8000].")] = 0,
+    host: Annotated[str, typer.Option(help="Interface; 0.0.0.0 inside a container.")] = "127.0.0.1",
+    workers: Annotated[int, typer.Option(min=1, help="uvicorn worker processes.")] = 1,
+    index_path: Annotated[
+        Path | None, typer.Option("--index", help="Index file [default: $INDEX_PATH].")
+    ] = None,
+    corpus: Annotated[
+        Path | None, typer.Option(help="JSON-lines corpus for snippets [default: $CORPUS_PATH].")
+    ] = None,
+) -> None:
+    """Run the web app (JSON API + search page) with uvicorn."""
+    import uvicorn
+
+    with expected_errors():
+        if index_path is not None:
+            os.environ["INDEX_PATH"] = str(index_path)  # inherited by worker processes
+        if corpus is not None:
+            os.environ["CORPUS_PATH"] = str(corpus)
+        target = Path(os.environ.get("INDEX_PATH", "index.fidx"))
+        if not target.exists():
+            raise CliError(f"index not found: {target} (build one with `findex index`)")
+    uvicorn.run(
+        "findex.web:app",
+        host=host,
+        port=port or _default_port(),
+        workers=workers,
+        log_level="info",
+        access_log=False,  # one line per request would dominate the logs under load tests
+    )

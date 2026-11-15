@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}findex{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">find<span>ex</span></a>
+    <form class="search" action="/" method="get" role="search">
+      <input type="search" name="q" value="{{ q }}" placeholder='наприклад: "science fiction" OR mystery'
+             maxlength="200" aria-label="Пошуковий запит" {% if not q %}autofocus{% endif %}>
+      <button type="submit">Шукати</button>
+    </form>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    findex — навчальний пошуковий рушій ·
+    <a href="/docs">API</a> ·
+    <a href="https://github.com/erwrqq2/Python">GitHub</a>
+  </footer>
+</body>
+</html>

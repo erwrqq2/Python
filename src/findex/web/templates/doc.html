@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.title }} — findex{% endblock %}
+{% block content %}
+<article class="document">
+  {% if q %}<p class="back"><a href="/?q={{ q|urlencode }}">← до результатів «{{ q }}»</a></p>{% endif %}
+  <h1>{{ meta.title }}</h1>
+  <p class="meta">
+    {% if meta.path.startswith("http") %}<a href="{{ meta.path }}" rel="noopener">{{ meta.path }}</a>{% else %}{{ meta.path }}{% endif %}
+    · {{ "{:,}".format(length).replace(",", " ") }} токенів · doc_id {{ meta.doc_id }}
+  </p>
+  {% if body %}
+    <div class="body">{{ body }}</div>
+  {% else %}
+    <p class="notice">Текст цього документа недоступний на сервері.</p>
+  {% endif %}
+</article>
+{% endblock %}

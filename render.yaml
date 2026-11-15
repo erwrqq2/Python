@@ -1,0 +1,17 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Render builds the Dockerfile from this repository on every push to main.
+services:
+  - type: web
+    name: findex
+    runtime: docker
+    plan: free
+    branch: main
+    healthCheckPath: /health     # Render restarts the service when this stops answering 200
+    autoDeploy: true
+    envVars:                     # configuration lives only in the environment
+      - key: INDEX_PATH
+        value: /app/index.fidx
+      - key: CORPUS_PATH
+        value: /app/corpus/books-toscrape.jsonl
+      - key: LOG_LEVEL
+        value: INFO

@@ -48,3 +48,20 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (two stages, deps from uv.lock, index built inside)
+        run: docker build -t findex .
+
+      - name: Run it; /health, /search; not root
+        run: |
+          docker run -d --name findex -p 8000:8000 findex
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health && break; sleep 1; done
+          curl -sf "http://127.0.0.1:8000/search?q=book&k=3" | python3 -m json.tool | head -20
+          test "$(docker exec findex id -u)" != "0"
+          docker logs findex

@@ -19,7 +19,7 @@ _APOSTROPHE = "['\u2019\u2018\u02bc`]"
 _WS_RE = re.compile(r"\s+")
 
 
-def _terms_regex(terms: Collection[str]) -> re.Pattern[str]:
+def terms_regex(terms: Collection[str]) -> re.Pattern[str]:
     # Longest first, so "whales" wins over "whale" at the same position.
     alternatives = [
         re.escape(t).replace("'", _APOSTROPHE) for t in sorted(set(terms), key=len, reverse=True)
@@ -31,7 +31,7 @@ def make_snippet(text: str, terms: Collection[str], width: int = WIDTH) -> str:
     """Return the best ±`width` window of `text` with `terms` highlighted ("" if none)."""
     if not terms:
         return ""
-    hits = [(m.start(), m.end(), m.group().casefold()) for m in _terms_regex(terms).finditer(text)]
+    hits = [(m.start(), m.end(), m.group().casefold()) for m in terms_regex(terms).finditer(text)]
     if not hits:
         return ""
 

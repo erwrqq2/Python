@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{% if q %}{{ q }} — {% endif %}findex{% endblock %}
+{% block content %}
+{% if error %}
+  <p class="notice error">{{ error }}</p>
+{% elif not q %}
+  <section class="intro">
+    <h1>Пошук по {{ "{:,}".format(index.num_docs).replace(",", " ") }} документах</h1>
+    <p>Ранжування BM25 або TF-IDF, булеві запити і фрази:</p>
+    <ul class="examples">
+      <li><a href="/?q=travel">travel</a></li>
+      <li><a href="/?q=%22science+fiction%22+OR+mystery">"science fiction" OR mystery</a></li>
+      <li><a href="/?q=poetry+NOT+love">poetry NOT love</a></li>
+      <li><a href="/?q=history+AND+%28war+OR+empire%29">history AND (war OR empire)</a></li>
+    </ul>
+    <p class="hint">Оператори — великими літерами: <code>AND</code>, <code>OR</code>, <code>NOT</code>,
+      дужки й <code>"фрази в лапках"</code>. Пробіл між словами означає AND.</p>
+  </section>
+{% else %}
+  <div class="summary">
+    <span>{{ total }} {{ "збіг" if total == 1 else "збігів" }} · {{ "%.1f"|format(took) }} мс</span>
+    <span class="scorers">
+      {% for name in ["bm25", "tfidf"] %}
+        {% if name == scorer %}<strong>{{ name|upper }}</strong>
+        {% else %}<a href="/?q={{ q|urlencode }}&scorer={{ name }}&k={{ k }}">{{ name|upper }}</a>{% endif %}
+      {% endfor %}
+    </span>
+  </div>
+  {% if not results %}
+    <p class="notice">Нічого не знайдено. Спробуйте інше слово або <code>OR</code>.</p>
+  {% endif %}
+  <ol class="results" start="{{ (page - 1) * k + 1 }}">
+    {% for r, url in results %}
+      <li>
+        <a class="title" href="/doc/{{ r.doc_id }}?q={{ q|urlencode }}">{{ r.title }}</a>
+        <div class="meta"><span class="score">{{ "%.3f"|format(r.score) }}</span> <span class="url">{{ url }}</span></div>
+        {% if r.snippet %}<p class="snippet">{{ r.snippet|highlight }}</p>{% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+  {% if pages > 1 %}
+    <nav class="pager" aria-label="Сторінки результатів">
+      {% if page > 1 %}<a href="/?q={{ q|urlencode }}&page={{ page - 1 }}&k={{ k }}&scorer={{ scorer }}">← Назад</a>{% endif %}
+      <span>сторінка {{ page }} з {{ pages }}</span>
+      {% if page < pages %}<a href="/?q={{ q|urlencode }}&page={{ page + 1 }}&k={{ k }}&scorer={{ scorer }}">Далі →</a>{% endif %}
+    </nav>
+  {% endif %}
+{% endif %}
+{% endblock %}

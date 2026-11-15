@@ -392,10 +392,16 @@ def test_min_delay_between_requests_to_one_host() -> None:
         links = "".join(f'<a href="/p{i}">x</a>' for i in range(1, 6))
         return httpx.Response(200, html=f"<title>t</title>{links}")
 
-    config = CrawlConfig(max_pages=6, concurrency=5, per_host=5, delay=0.05, retry_base=0.0)
+    delay = 0.05
+    config = CrawlConfig(max_pages=6, concurrency=5, per_host=5, delay=delay, retry_base=0.0)
     collect(config, httpx.MockTransport(handler))
     gaps = [b - a for a, b in zip(starts, starts[1:], strict=False)]
-    assert len(starts) == 7 and min(gaps) >= 0.04  # timer granularity on Windows is ~15 ms
+    assert len(starts) == 7
+    # The schedule comes from loop.time(), which on a default Windows timer ticks every
+    # ~15.6 ms, so one gap can come out up to a tick short; the total cannot drift.
+    tick = 0.02
+    assert min(gaps) >= delay - tick
+    assert starts[-1] - starts[0] >= 6 * delay - tick
 
 
 def test_breaking_out_early_cleans_up() -> None:
