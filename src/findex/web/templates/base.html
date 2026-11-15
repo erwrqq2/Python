@@ -12,6 +12,13 @@
     <form class="search" action="/" method="get" role="search">
       <input type="search" name="q" value="{{ q }}" placeholder='наприклад: "science fiction" OR mystery'
              maxlength="200" aria-label="Пошуковий запит" {% if not q %}autofocus{% endif %}>
+      {% if semantic %}
+      <select name="mode" aria-label="Режим пошуку" title="keyword — слова й оператори; semantic — за змістом; hybrid — обидва (RRF)">
+        {% for m, label in [("keyword", "слова"), ("semantic", "зміст"), ("hybrid", "гібрид")] %}
+          <option value="{{ m }}" {% if m == mode %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
       <button type="submit">Шукати</button>
     </form>
   </header>

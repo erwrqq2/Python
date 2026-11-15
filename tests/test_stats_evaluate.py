@@ -49,7 +49,7 @@ def test_precision_at_5(index: Index, tmp_path: Path) -> None:
     path = tmp_path / "queries.json"
     path.write_text(json.dumps(queries), encoding="utf-8")
     scores = evaluate(index, load_queries(path))
-    assert [s.precision("bm25") for s in scores] == [0.4, 0.0]  # 2 of top 5, then 0
+    assert [s.precision("BM25") for s in scores] == [0.4, 0.0]  # 2 of top 5, then 0
     assert scores[0].best_possible == 0.4
     table = format_table(scores)
     assert "| `whale` | 2 | 0.4 | 0.4 | 0.4 |" in table

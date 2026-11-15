@@ -65,3 +65,30 @@ jobs:
           curl -sf "http://127.0.0.1:8000/search?q=book&k=3" | python3 -m json.tool | head -20
           test "$(docker exec findex id -u)" != "0"
           docker logs findex
+
+  benchmarks:
+    name: benchmarks (regression gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Restore the previous benchmark results from main
+        uses: actions/cache/restore@v4
+        with:
+          path: .benchmarks
+          key: benchmarks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: benchmarks-${{ runner.os }}-
+      - name: Benchmark search and build_index; fail if a median got 2x slower
+        run: >
+          uv run pytest tests/test_benchmarks.py --benchmark-only --benchmark-enable
+          --benchmark-autosave --benchmark-compare --benchmark-compare-fail=median:100%
+          --benchmark-columns=min,median,max,rounds
+      - name: Keep these results as the baseline for the next run
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: .benchmarks
+          key: benchmarks-${{ runner.os }}-${{ github.sha }}

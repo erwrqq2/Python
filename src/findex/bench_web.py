@@ -33,7 +33,7 @@ import httpx
 from fastapi import Depends, HTTPException
 
 from findex.query import QueryError
-from findex.rank import Searcher
+from findex.vector import VectorSearcher
 from findex.web.app import Page, Q, ScorerParam, create_app, get_searcher, run_search
 
 app = create_app()
@@ -41,7 +41,7 @@ app = create_app()
 
 @app.get("/search-async", include_in_schema=False)
 async def search_async(  # deliberately async def: blocks the event loop while it computes
-    searcher: Annotated[Searcher, Depends(get_searcher)],
+    searcher: Annotated[VectorSearcher, Depends(get_searcher)],
     q: Q,
     k: int = 10,
     page: Page = 1,

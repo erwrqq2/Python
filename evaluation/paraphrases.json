@@ -1,0 +1,12 @@
+[
+  {"query": "angling with artificial lures for river salmonids", "relevant": ["46169", "76776"],
+   "why": "paraphrase of 'fishing trout flies': no fishing/trout/flies"},
+  {"query": "hospitals for people with mental illness", "relevant": ["31185", "55104", "36450"],
+   "why": "paraphrase of 'insane asylum': no insane/asylum"},
+  {"query": "caring for colonies of pollinating insects", "relevant": ["25185"],
+   "why": "paraphrase of 'bees honey hive': no bees/honey/hive"},
+  {"query": "biography of the father of rail transport", "relevant": ["46229"],
+   "why": "paraphrase of 'locomotive railway': no locomotive/railway"},
+  {"query": "how chimpanzees and gorillas communicate", "relevant": ["67517"],
+   "why": "paraphrase of 'apes monkeys': no apes/monkeys"}
+]

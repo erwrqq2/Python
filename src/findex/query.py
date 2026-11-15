@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from findex.engines import MERGE, SET, Engine, EngineName, intersect
-from findex.index import Index
+from findex.index import QueryIndex
 from findex.tokenize import tokenize
 
 OPERATORS: Final = frozenset({"AND", "OR", "NOT"})
@@ -57,7 +57,7 @@ class Node:
     def __invert__(self) -> Not:
         return Not(self)
 
-    def evaluate[C](self, index: Index, engine: Engine[C]) -> C:
+    def evaluate[C](self, index: QueryIndex, engine: Engine[C]) -> C:
         """Matching doc_ids in the engine's representation (set for SET, list for MERGE)."""
         raise NotImplementedError
 
@@ -70,7 +70,7 @@ class Node:
 class Term(Node):
     word: str
 
-    def evaluate[C](self, index: Index, engine: Engine[C]) -> C:
+    def evaluate[C](self, index: QueryIndex, engine: Engine[C]) -> C:
         return engine.make(index.doc_ids(self.word))
 
     def terms(self) -> Iterator[str]:
@@ -84,7 +84,7 @@ class Term(Node):
 class Phrase(Node):
     words: tuple[str, ...]
 
-    def evaluate[C](self, index: Index, engine: Engine[C]) -> C:
+    def evaluate[C](self, index: QueryIndex, engine: Engine[C]) -> C:
         return engine.make(phrase_doc_ids(index, self.words))
 
     def terms(self) -> Iterator[str]:
@@ -99,7 +99,7 @@ class And(Node):
     left: Node
     right: Node
 
-    def evaluate[C](self, index: Index, engine: Engine[C]) -> C:
+    def evaluate[C](self, index: QueryIndex, engine: Engine[C]) -> C:
         # a AND NOT b == a minus b: no need to build the complement of b.
         if isinstance(self.right, Not):
             return engine.not_(
@@ -124,7 +124,7 @@ class Or(Node):
     left: Node
     right: Node
 
-    def evaluate[C](self, index: Index, engine: Engine[C]) -> C:
+    def evaluate[C](self, index: QueryIndex, engine: Engine[C]) -> C:
         return engine.or_(self.left.evaluate(index, engine), self.right.evaluate(index, engine))
 
     def terms(self) -> Iterator[str]:
@@ -139,7 +139,7 @@ class Or(Node):
 class Not(Node):
     child: Node
 
-    def evaluate[C](self, index: Index, engine: Engine[C]) -> C:
+    def evaluate[C](self, index: QueryIndex, engine: Engine[C]) -> C:
         everything = engine.make(index.all_doc_ids())
         return engine.not_(everything, self.child.evaluate(index, engine))
 
@@ -150,7 +150,7 @@ class Not(Node):
         return f"NOT {self.child}"
 
 
-def match(tree: Node, index: Index, engine: EngineName = "set") -> list[int]:
+def match(tree: Node, index: QueryIndex, engine: EngineName = "set") -> list[int]:
     """Sorted doc_ids matching the query tree, computed with the named engine."""
     if engine == "merge":
         return MERGE.finish(tree.evaluate(index, MERGE))
@@ -165,7 +165,7 @@ def _followed_by(starts: Sequence[int], positions: Sequence[int], offset: int) -
     return intersect(starts, [p - offset for p in positions])
 
 
-def phrase_doc_ids(index: Index, words: Sequence[str]) -> list[int]:
+def phrase_doc_ids(index: QueryIndex, words: Sequence[str]) -> list[int]:
     """Docs where `words` occur consecutively. Needs an index built with positions."""
     if not index.has_positions:
         raise QueryError("phrase search needs an index built with --positions")
@@ -174,7 +174,7 @@ def phrase_doc_ids(index: Index, words: Sequence[str]) -> list[int]:
         candidates = intersect(candidates, index.doc_ids(word))
     if not candidates:
         return []
-    by_doc = [{p.doc_id: p.positions for p in index.get(word, ())} for word in words]
+    by_doc = [{p.doc_id: p.positions for p in index.postings_for(word)} for word in words]
     hits: list[int] = []
     for doc_id in candidates:
         starts: Sequence[int] = by_doc[0][doc_id]

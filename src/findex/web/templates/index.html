@@ -13,6 +13,9 @@
       <li><a href="/?q=poetry+NOT+love">poetry NOT love</a></li>
       <li><a href="/?q=history+AND+%28war+OR+empire%29">history AND (war OR empire)</a></li>
     </ul>
+    {% if semantic %}<p class="hint">Режим <b>зміст</b> шукає за значенням, навіть без спільних слів
+      (спробуйте <a href="/?q=a+story+about+a+lonely+robot&mode=semantic">a story about a lonely robot</a>),
+      <b>гібрид</b> зливає обидва рейтинги.</p>{% endif %}
     <p class="hint">Оператори — великими літерами: <code>AND</code>, <code>OR</code>, <code>NOT</code>,
       дужки й <code>"фрази в лапках"</code>. Пробіл між словами означає AND.</p>
   </section>
@@ -20,10 +23,14 @@
   <div class="summary">
     <span>{{ total }} {{ "збіг" if total == 1 else "збігів" }} · {{ "%.1f"|format(took) }} мс</span>
     <span class="scorers">
-      {% for name in ["bm25", "tfidf"] %}
-        {% if name == scorer %}<strong>{{ name|upper }}</strong>
-        {% else %}<a href="/?q={{ q|urlencode }}&scorer={{ name }}&k={{ k }}">{{ name|upper }}</a>{% endif %}
-      {% endfor %}
+      {% if mode == "keyword" %}
+        {% for name in ["bm25", "tfidf"] %}
+          {% if name == scorer %}<strong>{{ name|upper }}</strong>
+          {% else %}<a href="/?q={{ q|urlencode }}&scorer={{ name }}&k={{ k }}">{{ name|upper }}</a>{% endif %}
+        {% endfor %}
+      {% else %}
+        <strong>{{ "semantic · all-MiniLM-L6-v2" if mode == "semantic" else "hybrid · BM25 + semantic, RRF" }}</strong>
+      {% endif %}
     </span>
   </div>
   {% if not results %}
@@ -40,9 +47,9 @@
   </ol>
   {% if pages > 1 %}
     <nav class="pager" aria-label="Сторінки результатів">
-      {% if page > 1 %}<a href="/?q={{ q|urlencode }}&page={{ page - 1 }}&k={{ k }}&scorer={{ scorer }}">← Назад</a>{% endif %}
+      {% if page > 1 %}<a href="/?q={{ q|urlencode }}&page={{ page - 1 }}&k={{ k }}&scorer={{ scorer }}&mode={{ mode }}">← Назад</a>{% endif %}
       <span>сторінка {{ page }} з {{ pages }}</span>
-      {% if page < pages %}<a href="/?q={{ q|urlencode }}&page={{ page + 1 }}&k={{ k }}&scorer={{ scorer }}">Далі →</a>{% endif %}
+      {% if page < pages %}<a href="/?q={{ q|urlencode }}&page={{ page + 1 }}&k={{ k }}&scorer={{ scorer }}&mode={{ mode }}">Далі →</a>{% endif %}
     </nav>
   {% endif %}
 {% endif %}

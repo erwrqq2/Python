@@ -18,12 +18,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, NotRequired, TypedDict, cast
 
+from findex.arrays import ArrayIndex, load_array_index
 from findex.index import Index
+from findex.query import QueryError
 from findex.rank import SCORERS, ScorerName, Searcher, SearchResult
+from findex.semantic import SemanticIndex
 from findex.store import open_index
+from findex.vector import Mode, VectorSearcher
 
 K: Final = 5
 NAMES: Final[dict[ScorerName, str]] = {"bm25": "BM25", "tfidf": "TF-IDF"}
+MODE_COLUMNS: Final[dict[str, Mode]] = {
+    "keyword (BM25)": "keyword",
+    "semantic": "semantic",
+    "hybrid (RRF)": "hybrid",
+}
 
 
 class LabelledQuery(TypedDict):
@@ -36,9 +45,9 @@ class LabelledQuery(TypedDict):
 class QueryScore:
     query: str
     relevant: frozenset[int]
-    top: dict[ScorerName, list[SearchResult]]
+    top: dict[str, list[SearchResult]]  # column name -> top 5
 
-    def precision(self, scorer: ScorerName) -> float:
+    def precision(self, scorer: str) -> float:
         return sum(r.doc_id in self.relevant for r in self.top[scorer]) / K
 
     @property
@@ -57,17 +66,37 @@ def evaluate(index: Index, queries: list[LabelledQuery]) -> list[QueryScore]:
     scores: list[QueryScore] = []
     for q in queries:
         relevant = frozenset(by_stem[s] for s in q["relevant"])
-        top: dict[ScorerName, list[SearchResult]] = {
-            name: searcher.search(q["query"], scorer, k=K) for name, scorer in SCORERS.items()
+        top: dict[str, list[SearchResult]] = {
+            NAMES[name]: searcher.search(q["query"], scorer, k=K)
+            for name, scorer in SCORERS.items()
         }
         scores.append(QueryScore(q["query"], relevant, top))
     return scores
 
 
+def evaluate_modes(
+    index: ArrayIndex, semantic: SemanticIndex, queries: list[LabelledQuery]
+) -> list[QueryScore]:
+    """P@5 of keyword (BM25), semantic and hybrid search (Lab 8)."""
+    by_stem = {Path(m.path).stem: d for d, m in index.doc_meta.items()}
+    searcher = VectorSearcher(index, semantic=semantic)
+    scores: list[QueryScore] = []
+    for q in queries:
+        relevant = frozenset(by_stem[s] for s in q["relevant"])
+        top: dict[str, list[SearchResult]] = {}
+        for column, mode in MODE_COLUMNS.items():
+            try:
+                top[column] = searcher.search(q["query"], "bm25", k=K, mode=mode)
+            except QueryError:
+                top[column] = []
+        scores.append(QueryScore(q["query"], relevant, top))
+    return scores
+
+
 def format_table(scores: list[QueryScore]) -> str:
-    names = list(SCORERS)
+    names = list(scores[0].top) if scores else []
     lines = [
-        "| Query | Relevant | max | " + " | ".join(f"{NAMES[n]} P@5" for n in names) + " |",
+        "| Query | Relevant | max | " + " | ".join(f"{n} P@5" for n in names) + " |",
         "|---|---|---|" + "---|" * len(names),
     ]
     for s in scores:
@@ -83,17 +112,28 @@ def format_table(scores: list[QueryScore]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m findex.evaluate", description=__doc__)
     parser.add_argument("index", type=Path)
-    parser.add_argument("queries", type=Path)
+    parser.add_argument("queries", type=Path, nargs="+", help="one or more query files")
     parser.add_argument("--details", action="store_true", help="print each top 5")
+    parser.add_argument(
+        "--modes", action="store_true", help="keyword / semantic / hybrid (needs `findex embed`)"
+    )
     args = parser.parse_args(argv)
+    queries = [q for path in args.queries for q in load_queries(path)]
 
-    with open_index(args.index) as index:
-        scores = evaluate(index, load_queries(args.queries))
+    if args.modes:
+        index = load_array_index(args.index)
+        semantic = SemanticIndex.load(args.index)
+        if semantic is None:
+            parser.error(f"no embeddings for {args.index}: run `findex embed {args.index}`")
+        scores = evaluate_modes(index, semantic, queries)
+    else:
+        with open_index(args.index) as obj_index:
+            scores = evaluate(obj_index, queries)
     print(format_table(scores))
     if args.details:
         for s in scores:
             for name, top in s.top.items():
-                print(f"\n{s.query} [{NAMES[name]}]")
+                print(f"\n{s.query} [{name}]")
                 for r in top:
                     mark = "+" if r.doc_id in s.relevant else "-"
                     print(f"  {mark} {r.score:7.3f} [{r.doc_id}] {r.title[:60]}")

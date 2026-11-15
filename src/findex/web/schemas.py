@@ -18,6 +18,7 @@ class SearchHit(BaseModel):
 class SearchResponse(BaseModel):
     query: str
     scorer: Literal["bm25", "tfidf"]
+    mode: Literal["keyword", "semantic", "hybrid"] = "keyword"
     total: int = Field(description="How many documents match the Boolean query")
     page: int
     k: int
@@ -42,6 +43,8 @@ class Stats(BaseModel):
     avg_doc_length: float
     positions: bool
     uptime_s: float
+    passages: int | None = Field(default=None, description="Embedded passages (semantic search)")
+    embedding_model: str | None = None
 
 
 class Health(BaseModel):

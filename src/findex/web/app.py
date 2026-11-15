@@ -37,12 +37,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from findex.index import Index
+from findex.arrays import ArrayIndex, load_array_index
+from findex.docstore import DocumentStore
 from findex.query import QueryError, parse
-from findex.rank import SCORERS, Searcher, SearchResult
+from findex.rank import SearchResult
+from findex.semantic import SemanticIndex
 from findex.snippet import terms_regex
-from findex.store import load
-from findex.web.docstore import DocumentStore
+from findex.tokenize import tokenize
+from findex.vector import Mode, VectorSearcher
 from findex.web.schemas import Document, ErrorBody, Health, SearchHit, SearchResponse, Stats
 from findex.web.settings import Settings, get_settings
 
@@ -91,25 +93,27 @@ def request_id_of(request: Request) -> str:
 # --- dependencies -----------------------------------------------------------------------
 
 
-def get_index(request: Request) -> Index:
-    index: Index | None = getattr(request.app.state, "index", None)
+def get_index(request: Request) -> ArrayIndex:
+    index: ArrayIndex | None = getattr(request.app.state, "index", None)
     if index is None:
         raise HTTPException(status_code=503, detail="index is not loaded yet")
     return index
 
 
-def get_searcher(request: Request, index: Annotated[Index, Depends(get_index)]) -> Searcher:
-    searcher: Searcher | None = getattr(request.app.state, "searcher", None)
-    return searcher if searcher is not None else Searcher(index)
+def get_searcher(
+    request: Request, index: Annotated[ArrayIndex, Depends(get_index)]
+) -> VectorSearcher:
+    searcher: VectorSearcher | None = getattr(request.app.state, "searcher", None)
+    return searcher if searcher is not None else VectorSearcher(index)
 
 
-def get_store(request: Request, index: Annotated[Index, Depends(get_index)]) -> DocumentStore:
+def get_store(request: Request, index: Annotated[ArrayIndex, Depends(get_index)]) -> DocumentStore:
     store: DocumentStore | None = getattr(request.app.state, "store", None)
     return store if store is not None else DocumentStore(index)
 
 
-IndexDep = Annotated[Index, Depends(get_index)]
-SearcherDep = Annotated[Searcher, Depends(get_searcher)]
+IndexDep = Annotated[ArrayIndex, Depends(get_index)]
+SearcherDep = Annotated[VectorSearcher, Depends(get_searcher)]
 StoreDep = Annotated[DocumentStore, Depends(get_store)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
@@ -117,26 +121,82 @@ Q = Annotated[str, Query(min_length=1, max_length=200, description="Query, e.g. 
 K = Annotated[int, Query(ge=1, le=50, description="Results per page")]
 Page = Annotated[int, Query(ge=1, le=1000, description="Page number, from 1")]
 ScorerParam = Literal["bm25", "tfidf"]
+ModeParam = Literal["keyword", "semantic", "hybrid"]
+SEMANTIC_POOL = 100  # semantic/hybrid rankings are cut at this depth
+STOPWORDS = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "of",
+        "and",
+        "or",
+        "to",
+        "in",
+        "on",
+        "at",
+        "for",
+        "with",
+        "about",
+        "by",
+        "from",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "how",
+        "what",
+        "who",
+        "which",
+        "that",
+        "this",
+        "it",
+        "as",
+        "into",
+    ]
+)
 
 
 # --- the search itself (shared by the API and the HTML page) ----------------------------
 
 
 def run_search(
-    searcher: Searcher, q: str, k: int, page: int, scorer: ScorerParam
+    searcher: VectorSearcher, q: str, k: int, page: int, scorer: ScorerParam, mode: Mode = "keyword"
 ) -> tuple[list[SearchResult], int, float]:
-    """One page of results. Raises QueryError on a broken query."""
+    """One page of results and the total. Raises QueryError (keyword mode, broken query)
+    and SemanticUnavailable (no embeddings on this server)."""
     start = time.perf_counter()
-    tree = parse(q)
-    results = searcher.search(tree, SCORERS[scorer], k=k * page, snippets=False)[(page - 1) * k :]
-    terms = list(dict.fromkeys(tree.terms()))
-    with_snippets = [
-        SearchResult(r.score, r.doc_id, r.title, searcher.snippet(r.doc_id, terms)) for r in results
+    if mode != "keyword" and searcher.semantic is None:
+        raise SemanticUnavailable
+    if mode == "keyword":
+        tree = parse(q)
+        results = searcher.search(tree, scorer, k=k * page, mode="keyword")
+        # From the cached match, not from shared searcher state: def routes run in a
+        # thread pool, so concurrent requests share the searcher.
+        total = len(searcher.match(tree))
+    else:
+        results = searcher.search(q, scorer, k=SEMANTIC_POOL, mode=mode)
+        total = len(results)
+    terms = _query_words(q)
+    if mode != "keyword":  # a natural-language query: don't highlight "a", "the", "of"...
+        terms = [t for t in terms if t not in STOPWORDS] or terms
+    page_results = [
+        SearchResult(r.score, r.doc_id, r.title, searcher.snippet(r.doc_id, terms, q))
+        for r in results[(page - 1) * k : page * k]
     ]
-    # Not searcher.last_match_count: def routes run in a thread pool, and that attribute of
-    # the shared Searcher could already hold another request's count. match() is cached.
-    total = len(searcher.match(tree))
-    return with_snippets, total, (time.perf_counter() - start) * 1000
+    return page_results, total, (time.perf_counter() - start) * 1000
+
+
+class SemanticUnavailable(Exception):
+    """This server has no embeddings: run `findex embed` (or use mode=keyword)."""
+
+
+def _query_words(q: str) -> list[str]:
+    try:
+        return list(dict.fromkeys(parse(q).terms()))
+    except QueryError:
+        return list(dict.fromkeys(tokenize(q)))
 
 
 def _terms(q: str) -> list[str]:
@@ -171,10 +231,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         conf = settings or get_settings()
         configure_logging(conf.log_level)
-        index = load(conf.index_path)  # a missing/broken file stops start-up here
+        index = load_array_index(conf.index_path)  # a missing/broken file stops start-up here
+        semantic = SemanticIndex.load(conf.index_path)  # None if `findex embed` was not run
+        if semantic is not None:
+            semantic.embed_query("warm up")  # load the ONNX model now, not on the first query
         app.state.index = index
         app.state.store = DocumentStore(index, conf.corpus_path)
-        app.state.searcher = Searcher(index, texts=app.state.store.text)
+        app.state.searcher = VectorSearcher(index, texts=app.state.store.text, semantic=semantic)
         app.state.started = time.monotonic()
         log.info("loaded %r from %s", index, conf.index_path)
         try:
@@ -216,12 +279,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         k: K = 10,
         page: Page = 1,
         scorer: ScorerParam = "bm25",
+        mode: ModeParam = "keyword",
     ) -> SearchResponse:
-        """Ranked search; ``page`` and ``k`` select the slice of results."""
+        """Ranked search; ``page`` and ``k`` select the slice of results.
+
+        ``mode``: ``keyword`` (Boolean query + BM25/TF-IDF), ``semantic`` (embedding
+        similarity, best passage per document) or ``hybrid`` (both, fused with RRF)."""
         try:
-            results, total, took = run_search(searcher, q, k, page, scorer)
+            results, total, took = run_search(searcher, q, k, page, scorer, mode)
         except QueryError as exc:
             raise HTTPException(status_code=422, detail=f"bad query: {exc}") from exc
+        except SemanticUnavailable as exc:
+            raise HTTPException(
+                status_code=422, detail="semantic search is not set up here"
+            ) from exc
         index = searcher.index
         hits = [
             SearchHit(
@@ -236,6 +307,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return SearchResponse(
             query=q,
             scorer=scorer,
+            mode=mode,
             total=total,
             page=page,
             k=k,
@@ -259,16 +331,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/stats", response_model=Stats, tags=["api"])
-    def stats(request: Request, index: IndexDep) -> Stats:
+    def stats(request: Request, index: IndexDep, searcher: SearcherDep) -> Stats:
         started = getattr(request.app.state, "started", time.monotonic())
+        semantic = searcher.semantic
         return Stats(
             documents=index.num_docs,
             terms=len(index),
             postings=index.num_postings,
-            tokens=sum(index.doc_lengths.values()),
+            tokens=index.num_tokens,
             avg_doc_length=round(index.avg_doc_length, 1),
             positions=index.has_positions,
             uptime_s=round(time.monotonic() - started, 1),
+            passages=semantic.meta["chunks"] if semantic else None,
+            embedding_model=semantic.meta["model"] if semantic else None,
         )
 
     @app.get("/health", response_model=Health, tags=["ops"], responses={503: {"model": ErrorBody}})
@@ -277,7 +352,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         ``async def`` on purpose: it does no blocking work, so it answers straight from the
         event loop — even while every thread-pool thread is busy with searches."""
-        index: Index | None = getattr(request.app.state, "index", None)
+        index: ArrayIndex | None = getattr(request.app.state, "index", None)
         if index is None or index.closed:
             return JSONResponse({"detail": "index is not loaded"}, status_code=503)
         return Health(status="ok", documents=index.num_docs)
@@ -292,21 +367,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         k: K = 10,
         page: Page = 1,
         scorer: ScorerParam = "bm25",
+        mode: ModeParam = "keyword",
     ) -> HTMLResponse:
         context: dict[str, Any] = {
             "q": q,
             "k": k,
             "page": page,
             "scorer": scorer,
+            "mode": mode,
+            "semantic": searcher.semantic is not None,
             "results": [],
             "error": None,
             "index": searcher.index,
         }
         if q.strip():
             try:
-                results, total, took = run_search(searcher, q, k, page, scorer)
+                results, total, took = run_search(searcher, q, k, page, scorer, mode)
             except QueryError as exc:
                 context["error"] = f"Не вдалося розібрати запит: {exc}"
+            except SemanticUnavailable:
+                context["error"] = "Семантичний пошук на цьому сервері не налаштований."
             else:
                 context.update(
                     results=[(r, searcher.index.doc_meta[r.doc_id].path) for r in results],

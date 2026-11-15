@@ -24,3 +24,9 @@ data/
 .coverage
 coverage.xml
 bench/*.log
+
+# Embeddings (rebuilt by `findex embed`; the Docker image builds its own)
+*.emb.npy
+*.chunks.npy
+*.emb.json
+.benchmarks/

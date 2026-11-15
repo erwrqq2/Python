@@ -14,6 +14,7 @@ import json
 import logging
 from pathlib import Path
 
+from findex.arrays import ArrayIndex
 from findex.corpus import read_text
 from findex.index import Index
 
@@ -21,7 +22,7 @@ log = logging.getLogger(__name__)
 
 
 class DocumentStore:
-    def __init__(self, index: Index, corpus_path: Path | None = None) -> None:
+    def __init__(self, index: Index | ArrayIndex, corpus_path: Path | None = None) -> None:
         self.index = index
         self.corpus_path = corpus_path
         self._offsets: list[int] = []

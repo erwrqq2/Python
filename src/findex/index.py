@@ -19,11 +19,12 @@ import logging
 import time
 import tracemalloc
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from itertools import islice
 from pathlib import Path
+from typing import Protocol
 
 from findex.corpus import Document, iter_documents
 from findex.timing import timed
@@ -48,6 +49,19 @@ class DocMeta:
     doc_id: int
     path: str
     title: str
+
+
+class QueryIndex(Protocol):
+    """What Boolean matching and phrases need from an index (`Index` or `ArrayIndex`)."""
+
+    @property
+    def has_positions(self) -> bool: ...
+
+    def doc_ids(self, term: str) -> list[int]: ...
+
+    def all_doc_ids(self) -> list[int]: ...
+
+    def postings_for(self, term: str) -> Sequence[Posting]: ...
 
 
 class Index(Mapping[str, list[Posting]]):
@@ -140,6 +154,9 @@ class Index(Mapping[str, list[Posting]]):
 
     def all_doc_ids(self) -> list[int]:
         return list(self._sorted_doc_ids)
+
+    def postings_for(self, term: str) -> Sequence[Posting]:
+        return self.postings.get(term, ())
 
     # --- resource -------------------------------------------------------------------
 

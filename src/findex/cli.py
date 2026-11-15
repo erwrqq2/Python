@@ -17,7 +17,6 @@ call ``logging.getLogger(__name__)``.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -27,12 +26,10 @@ from collections import Counter
 from collections.abc import Generator, Iterable, Iterator
 from contextlib import aclosing, contextmanager, suppress
 from enum import StrEnum
-from importlib.metadata import PackageNotFoundError, version
 from itertools import islice
 from pathlib import Path
-from typing import Annotated, Final, TypedDict
+from typing import TYPE_CHECKING, Annotated, Final, TypedDict
 
-import httpx
 import typer
 from rich.console import Console
 from rich.live import Live
@@ -42,14 +39,19 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, T
 from rich.table import Table
 
 from findex.corpus import Document, count_documents, iter_documents
-from findex.crawler import CrawlConfig, CrawlStats, FetchResult, canonicalize, crawl
 from findex.engines import EngineName
 from findex.index import Index, build_index
 from findex.parallel import ExecutorName, build_parallel
 from findex.query import QueryError, parse
-from findex.rank import ScorerName, Searcher, SearchResult, get_scorer
+from findex.rank import ScorerName, SearchResult
 from findex.stats import compute_stats
 from findex.store import Format, IndexFormatError, open_index, save
+from findex.vector import Mode, VectorSearcher
+
+if TYPE_CHECKING:  # imported lazily at run time: `findex search` must not pay for them
+    import httpx
+
+    from findex.crawler import CrawlConfig, CrawlStats, FetchResult
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +85,12 @@ class ExecutorChoice(StrEnum):
     processes = "processes"
 
 
+class ModeChoice(StrEnum):
+    keyword = "keyword"
+    semantic = "semantic"
+    hybrid = "hybrid"
+
+
 class FormatChoice(StrEnum):
     binary = "binary"
     pickle = "pickle"
@@ -103,6 +111,11 @@ EXECUTOR_NAMES: Final[dict[ExecutorChoice, ExecutorName]] = {
 }
 # Processes win on a multi-core machine (see README, Lab 5); threads do not under the GIL.
 DEFAULT_EXECUTOR: Final = ExecutorChoice.processes
+MODE_NAMES: Final[dict[ModeChoice, Mode]] = {
+    ModeChoice.keyword: "keyword",
+    ModeChoice.semantic: "semantic",
+    ModeChoice.hybrid: "hybrid",
+}
 FORMAT_NAMES: Final[dict[FormatChoice, Format]] = {
     FormatChoice.binary: "binary",
     FormatChoice.pickle: "pickle",
@@ -145,6 +158,8 @@ def setup_logging(verbosity: int) -> None:
 
 def _version_callback(value: bool) -> None:
     if value:
+        from importlib.metadata import PackageNotFoundError, version  # ~0.15 s import: lazy
+
         try:
             out.print(f"findex {version('findex')}")
         except PackageNotFoundError:  # pragma: no cover - running from a bare checkout
@@ -267,15 +282,19 @@ def highlight(snippet: str) -> str:
     return _BOLD_RE.sub(r"[bold yellow]\1[/]", escape(snippet))
 
 
-def _hit(rank: int, result: SearchResult, index: Index) -> SearchHit:
+def _hit(rank: int, result: SearchResult, path: str) -> SearchHit:
     return {
         "rank": rank,
         "score": round(result.score, 4),
         "doc_id": result.doc_id,
         "title": result.title,
-        "path": index.doc_meta[result.doc_id].path,
+        "path": path,
         "snippet": result.snippet,
     }
+
+
+def _label(mode: ModeChoice, scorer: ScorerChoice) -> str:
+    return scorer.value if mode is ModeChoice.keyword else f"{mode.value}, RRF k=60"
 
 
 @app.command("search")
@@ -286,24 +305,40 @@ def search_cmd(
     ],
     k: Annotated[int, typer.Option("-k", "--k", min=1, help="How many results.")] = 10,
     scorer: Annotated[ScorerChoice, typer.Option(help="Ranking function.")] = ScorerChoice.bm25,
+    mode: Annotated[
+        ModeChoice, typer.Option(help="keyword (BM25/TF-IDF), semantic, or hybrid (RRF).")
+    ] = ModeChoice.keyword,
     engine: Annotated[
         EngineChoice, typer.Option(help="Boolean matching engine.")
     ] = EngineChoice.set,
+    corpus: Annotated[
+        Path | None, typer.Option(help="JSON-lines corpus, for snippets of crawled pages.")
+    ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="JSON lines on stdout.")] = False,
     snippets: Annotated[bool, typer.Option(help="Show snippets.")] = True,
 ) -> None:
     """Search an index; results are ranked, with highlighted snippets."""
+    from findex.arrays import load_array_index
+    from findex.docstore import DocumentStore
+    from findex.semantic import SemanticIndex
+
     with expected_errors():
-        parse(query)  # fail fast on a broken query, before loading the index
-        with open_index(index_path) as index:
-            searcher = Searcher(index, ENGINE_NAMES[engine])
-            start = time.perf_counter()
-            results = searcher.search(
-                query, get_scorer(SCORER_NAMES[scorer]), k=k, snippets=snippets
-            )
-            elapsed = time.perf_counter() - start
-            hits = [_hit(rank, r, index) for rank, r in enumerate(results, start=1)]
-            matched, num_docs = searcher.last_match_count, index.num_docs
+        if MODE_NAMES[mode] == "keyword":
+            parse(query)  # fail fast on a broken query, before loading the index
+        index = load_array_index(index_path)
+        semantic = SemanticIndex.load(index_path) if MODE_NAMES[mode] != "keyword" else None
+        if MODE_NAMES[mode] != "keyword" and semantic is None:
+            raise CliError(f"no embeddings for {index_path}: run `findex embed {index_path}`")
+        store = DocumentStore(index, corpus)
+        searcher = VectorSearcher(index, ENGINE_NAMES[engine], texts=store.text, semantic=semantic)
+        start = time.perf_counter()
+        results = searcher.search(
+            query, SCORER_NAMES[scorer], k=k, snippets=snippets, mode=MODE_NAMES[mode]
+        )
+        elapsed = time.perf_counter() - start
+        hits = [_hit(rank, r, index.doc_meta[r.doc_id].path) for rank, r in enumerate(results, 1)]
+        matched = len(searcher.match(parse(query))) if MODE_NAMES[mode] == "keyword" else len(hits)
+        num_docs = index.num_docs
 
     log.info("%d of %d documents match, search took %.1f ms", matched, num_docs, elapsed * 1000)
     if as_json:
@@ -312,7 +347,7 @@ def search_cmd(
         return
 
     table = Table(
-        title=f"{escape(query)}  [dim]({matched} of {num_docs} match, {scorer.value})[/]",
+        title=f"{escape(query)}  [dim]({matched} of {num_docs} match, {_label(mode, scorer)})[/]",
         title_justify="left",
         expand=True,
     )
@@ -418,6 +453,10 @@ async def _crawl_to_file(
     seeds: list[str], config: CrawlConfig, out_path: Path, log_path: Path
 ) -> CrawlStats:
     """Crawl and stream pages to JSON lines; nothing but the current page is kept in memory."""
+    import asyncio
+
+    from findex.crawler import CrawlStats, crawl
+
     stats = CrawlStats()
     file_log = logging.FileHandler(log_path, mode="w", encoding="utf-8")
     file_log.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
@@ -492,6 +531,10 @@ def crawl_cmd(
     ] = False,
 ) -> None:
     """Crawl politely and stream pages to JSON lines (index them with `findex index`)."""
+    import asyncio
+
+    from findex.crawler import CrawlConfig, canonicalize
+
     config = CrawlConfig(
         max_pages=max_pages,
         concurrency=concurrency,
@@ -555,3 +598,58 @@ def serve_cmd(
         log_level="info",
         access_log=False,  # one line per request would dominate the logs under load tests
     )
+
+
+# --- findex embed -----------------------------------------------------------------------
+
+
+@app.command("embed")
+def embed_cmd(
+    index_path: Annotated[Path, typer.Argument(metavar="INDEX", help="Index file.")],
+    corpus: Annotated[
+        Path | None, typer.Option(help="JSON-lines corpus (texts of crawled pages).")
+    ] = None,
+    model: Annotated[str, typer.Option(help="fastembed model name.")] = (
+        "sentence-transformers/all-MiniLM-L6-v2"
+    ),
+    chunk_words: Annotated[int, typer.Option(min=20, help="Words per passage.")] = 150,
+    overlap: Annotated[int, typer.Option(min=0, help="Words shared by neighbours.")] = 30,
+) -> None:
+    """Embed every document's passages for semantic / hybrid search (-> INDEX.emb.npy)."""
+    from findex.arrays import load_array_index
+    from findex.docstore import DocumentStore
+    from findex.semantic import build_embeddings, paths_for
+    from findex.semantic import chunk_words as split
+
+    with expected_errors():
+        index = load_array_index(index_path)
+        store = DocumentStore(index, corpus)
+        texts: list[tuple[int, str]] = []
+        for doc_id in range(index.num_docs):
+            text = store.text(doc_id)
+            if text is None:
+                raise CliError(f"no text for doc {doc_id}: pass --corpus for a crawled corpus")
+            texts.append((doc_id, text))
+        total = sum(1 for _, t in texts for _ in split(t, chunk_words, overlap))
+        start = time.perf_counter()
+        columns = (TextColumn("embedding"), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn())
+        with Progress(*columns, console=err, transient=True) as progress:
+            task = progress.add_task("embed", total=total)
+            semantic = build_embeddings(
+                texts,
+                index.num_docs,
+                model=model,
+                size=chunk_words,
+                overlap=overlap,
+                on_progress=lambda n: progress.advance(task, n),
+            )
+        semantic.save(index_path)
+        elapsed = time.perf_counter() - start
+
+    emb_path = paths_for(index_path)[0]
+    table = Table(show_header=False, box=None)
+    table.add_row("passages", f"{semantic.meta['chunks']:,} from {index.num_docs:,} documents")
+    table.add_row("model", f"{model} ({semantic.meta['dim']} dims)")
+    table.add_row("matrix", f"{emb_path} ({emb_path.stat().st_size / 2**20:.1f} MiB, float32)")
+    table.add_row("time", f"{elapsed:.1f} s, {semantic.meta['chunks'] / elapsed:.0f} passages/s")
+    out.print(table)

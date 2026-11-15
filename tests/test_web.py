@@ -11,12 +11,13 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 import findex.cli
+from findex.arrays import ArrayIndex
 from findex.corpus import Document
+from findex.docstore import DocumentStore
 from findex.index import Index
-from findex.rank import Searcher
 from findex.store import save
+from findex.vector import VectorSearcher
 from findex.web.app import create_app, get_index, get_searcher, get_store
-from findex.web.docstore import DocumentStore
 from findex.web.settings import Settings
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
@@ -27,10 +28,11 @@ def app(index_pos: Index, docs: list[Document]) -> Iterator[FastAPI]:
     """An app whose dependencies point at the 4-document fixture index (lifespan not run)."""
     application = create_app(Settings(index_path=Path("does-not-matter.fidx")))
     texts = {d.doc_id: d.text for d in docs}
-    store = DocumentStore(index_pos)
+    arrays = ArrayIndex.from_index(index_pos)
+    store = DocumentStore(arrays)
     store.text = texts.get  # type: ignore[method-assign]  # in-memory texts instead of files
-    searcher = Searcher(index_pos, texts=texts.get)
-    application.dependency_overrides[get_index] = lambda: index_pos
+    searcher = VectorSearcher(arrays, texts=texts.get)
+    application.dependency_overrides[get_index] = lambda: arrays
     application.dependency_overrides[get_searcher] = lambda: searcher
     application.dependency_overrides[get_store] = lambda: store
     yield application
@@ -115,7 +117,7 @@ def test_stats(client: TestClient) -> None:
 
 
 def test_health_ok_when_loaded(app: FastAPI, index_pos: Index) -> None:
-    app.state.index = index_pos
+    app.state.index = ArrayIndex.from_index(index_pos)
     assert TestClient(app).get("/health").json() == {"status": "ok", "documents": 4}
 
 
@@ -132,7 +134,7 @@ def test_health_503_when_index_not_loaded() -> None:
 def test_unexpected_error_is_a_clean_500_with_request_id(
     app: FastAPI, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def broken() -> Searcher:
+    def broken() -> VectorSearcher:
         raise RuntimeError("disk on fire")
 
     app.dependency_overrides[get_searcher] = broken

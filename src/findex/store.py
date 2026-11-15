@@ -50,7 +50,7 @@ from findex.timing import timed
 type Format = Literal["pickle", "binary"]
 FORMATS: Final[tuple[Format, ...]] = ("pickle", "binary")
 MAGIC: Final = b"FIDX\x01"
-_HEADER_LEN: Final = struct.Struct("<I")
+HEADER_LEN: Final = struct.Struct("<I")
 
 
 class IndexFormatError(Exception):
@@ -162,7 +162,7 @@ def _save_binary(index: Index, path: Path) -> None:
 
     with path.open("wb") as f:
         f.write(MAGIC)
-        f.write(_HEADER_LEN.pack(len(raw_header)))
+        f.write(HEADER_LEN.pack(len(raw_header)))
         f.write(raw_header)
         for term in terms:  # same order as the offsets above
             plist = index.postings[term]
@@ -180,8 +180,8 @@ def _uint32s(view: memoryview, start: int, count: int) -> array[int]:
 
 def _load_binary(data: bytes) -> Index:
     pos = len(MAGIC)
-    (header_len,) = _HEADER_LEN.unpack_from(data, pos)
-    pos += _HEADER_LEN.size
+    (header_len,) = HEADER_LEN.unpack_from(data, pos)
+    pos += HEADER_LEN.size
     # json.loads returns Any; the file was written by _save_binary with this exact shape.
     header = cast(BinaryHeader, json.loads(data[pos : pos + header_len]))
     base = pos + header_len

@@ -28,18 +28,27 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY corpus ./corpus
 RUN /app/.venv/bin/findex index corpus/books-toscrape.jsonl --out /app/index.fidx --positions
 
+# Passage embeddings for semantic/hybrid search. The ONNX model (all-MiniLM-L6-v2,
+# ~90 MB) is downloaded here, at build time, into /app/models: the running
+# container never needs the network.
+ENV FASTEMBED_CACHE_PATH=/app/models HF_HUB_DISABLE_PROGRESS_BARS=1
+RUN /app/.venv/bin/findex embed /app/index.fidx --corpus corpus/books-toscrape.jsonl
+
 # --- stage 2: slim runtime, no uv, no build cache, not root ---------------------------
 FROM python:3.13-slim-bookworm
 RUN useradd --create-home --uid 10001 findex
 WORKDIR /app
 COPY --from=build --chown=findex:findex /app/.venv /app/.venv
-COPY --from=build --chown=findex:findex /app/index.fidx /app/index.fidx
+COPY --from=build --chown=findex:findex /app/index.fidx* /app/
+COPY --from=build --chown=findex:findex /app/models /app/models
 COPY --from=build --chown=findex:findex /app/corpus /app/corpus
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     INDEX_PATH=/app/index.fidx \
     CORPUS_PATH=/app/corpus/books-toscrape.jsonl \
+    FASTEMBED_CACHE_PATH=/app/models \
+    HF_HUB_OFFLINE=1 \
     LOG_LEVEL=INFO
 USER findex
 EXPOSE 8000

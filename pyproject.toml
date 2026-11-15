@@ -16,8 +16,10 @@ classifiers = [
 ]
 dependencies = [
     "fastapi>=0.163.1",
+    "fastembed>=0.9.1",
     "httpx>=0.28.1",
     "jinja2>=3.1.6",
+    "numpy>=2.5.4",
     "pydantic-settings>=2.16.3",
     "rich>=15.0.0",
     "selectolax>=1.0.2",
@@ -37,12 +39,17 @@ dev = [
     "httpx2>=2.16.0",
     "hypothesis>=6.170.15",
     "matplotlib>=3.11.2",
+    "pillow>=13.0.0",
+    "playwright>=1.65.2",
     "psutil>=7.2.2",
+    "py-spy>=0.4.3",
     "pyright>=1.1.414",
     "pytest>=9.2.0",
+    "pytest-benchmark>=5.3.1",
     "pytest-cov>=7.1.0",
     "pytest-github-actions-annotate-failures>=0.4.2",
     "ruff>=0.17.5",
+    "scalene>=2.4.0",
 ]
 
 [tool.ruff]
@@ -54,7 +61,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--strict-markers"]
+addopts = ["--strict-markers", "--benchmark-skip"]  # benchmarks: `pytest tests/test_benchmarks.py --benchmark-only`
 markers = ["slow: takes more than a second (run everything with plain `pytest`, skip with -m 'not slow')"]
 
 [tool.coverage.run]
