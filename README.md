@@ -5,8 +5,7 @@
 **Пошукова система, написана з нуля на Python: свій краулер, інвертований індекс, BM25,
 семантичний пошук і веб-сайт.**
 
-**Спробувати: <https://findex-f2zl.onrender.com>** · API: <https://findex-f2zl.onrender.com/docs> ·
-відео (3 хв): VIDEO_URL
+**Спробувати: <https://findex-f2zl.onrender.com>** · API: <https://findex-f2zl.onrender.com/docs> 
 
 > Безкоштовний тариф Render засинає після 15 хв без запитів — перше відкриття триває 30–60 с.
 
