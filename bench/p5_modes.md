@@ -1,7 +1,7 @@
 | Query | Relevant | max | keyword (BM25) P@5 | semantic P@5 | hybrid (RRF) P@5 |
 |---|---|---|---|---|---|
 | `fishing trout flies` | 2 | 0.4 | 0.4 | 0.4 | 0.4 |
-| `insane asylum` | 3 | 0.6 | 0.4 | 0.6 | 0.4 |
+| `insane asylum` | 3 | 0.6 | 0.4 | 0.6 | 0.6 |
 | `bees honey hive` | 1 | 0.2 | 0.2 | 0.2 | 0.2 |
 | `maya yucatan` | 2 | 0.4 | 0.4 | 0.4 | 0.4 |
 | `telegraph` | 1 | 0.2 | 0.2 | 0.2 | 0.2 |
@@ -11,11 +11,11 @@
 | `slavery slaves` | 3 | 0.6 | 0.4 | 0.4 | 0.4 |
 | `apes monkeys` | 1 | 0.2 | 0.2 | 0.2 | 0.2 |
 | `angling with artificial lures for river salmonids` | 2 | 0.4 | 0.0 | 0.4 | 0.4 |
-| `hospitals for people with mental illness` | 3 | 0.6 | 0.4 | 0.6 | 0.4 |
+| `hospitals for people with mental illness` | 3 | 0.6 | 0.4 | 0.6 | 0.6 |
 | `caring for colonies of pollinating insects` | 1 | 0.2 | 0.0 | 0.2 | 0.2 |
 | `biography of the father of rail transport` | 1 | 0.2 | 0.2 | 0.2 | 0.2 |
 | `how chimpanzees and gorillas communicate` | 1 | 0.2 | 0.2 | 0.2 | 0.2 |
-| **mean** | | | **0.27** | **0.32** | **0.29** |
+| **mean** | | | **0.27** | **0.32** | **0.32** |
 
 fishing trout flies [keyword (BM25)]
   +   8.675 [75] Fishing with Floating Flies
@@ -55,9 +55,9 @@ insane asylum [semantic]
 insane asylum [hybrid (RRF)]
   +   0.033 [41] Chapters in the History of the Insane in the British Isles
   +   0.032 [48] Psychotherapy Including the History of the Use of Mental Inf
-  -   0.030 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
+  +   0.031 [95] Colony Treatment of the Insane and Other Defectives
+  -   0.030 [129] Sex problems of man in health and disease
   -   0.029 [79] The Rise of the Dutch Republic — Complete (1566-74)
-  -   0.026 [81] The hand of Providence
 
 bees honey hive [keyword (BM25)]
   +  11.588 [29] Mysteries of Bee-keeping Explained
@@ -76,9 +76,9 @@ bees honey hive [semantic]
 bees honey hive [hybrid (RRF)]
   +   0.033 [29] Mysteries of Bee-keeping Explained
   -   0.032 [19] Animal Figures in the Maya Codices
-  -   0.031 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
+  -   0.031 [52] The Adventures of a Grain of Dust
+  -   0.031 [142] Narrative and Legendary Poems, Complete Volume I of The Work
   -   0.030 [106] Summer of Love
-  -   0.027 [11] Mount Music
 
 maya yucatan [keyword (BM25)]
   +  15.269 [19] Animal Figures in the Maya Codices
@@ -98,7 +98,7 @@ maya yucatan [hybrid (RRF)]
   +   0.033 [57] Reports on the Maya Indians of Yucatan
   -   0.032 [65] The Articles of Faith A Series of Lectures on the Principal 
   -   0.031 [62] Our War with Spain for Cuba's Freedom
-  -   0.016 [81] The hand of Providence
+  -   0.031 [81] The hand of Providence
 
 telegraph [keyword (BM25)]
   +   3.091 [102] The American Electro Magnetic Telegraph With the Reports of 
@@ -140,7 +140,7 @@ locomotive railway [hybrid (RRF)]
   -   0.031 [93] The Double Life
   -   0.030 [120] Military Reminiscences of the Civil War, Volume 2: November 
   -   0.030 [33] The Boy Scouts Book of Campfire Stories
-  -   0.029 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
+  -   0.029 [136] Normandy: The Scenery & Romance of Its Ancient Towns, Comple
 
 "civil war" confederate [keyword (BM25)]
   +   8.432 [120] Military Reminiscences of the Civil War, Volume 2: November 
@@ -161,7 +161,7 @@ locomotive railway [hybrid (RRF)]
   +   0.032 [20] With Lee in Virginia: A Story of the American Civil War
   -   0.031 [83] Georgia: Its History, Condition and Resources
   -   0.030 [15] Writing the Photoplay
-  -   0.030 [65] The Articles of Faith A Series of Lectures on the Principal 
+  -   0.030 [72] Life and adventures of "Billy" Dixon of Adobe Walls, Texas p
 
 jesus disciples [keyword (BM25)]
   +   7.621 [31] The New Testament of our Lord and Savior Jesus Christ. The c
@@ -221,9 +221,9 @@ apes monkeys [semantic]
 apes monkeys [hybrid (RRF)]
   +   0.033 [114] Apes and Monkeys: Their Life and Language
   -   0.032 [111] In Brightest Africa
-  -   0.031 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
-  -   0.029 [78] French Idioms and Proverbs A Companion to Deshumbert's "Dict
-  -   0.016 [19] Animal Figures in the Maya Codices
+  -   0.031 [19] Animal Figures in the Maya Codices
+  -   0.031 [139] The Book of the Thousand Nights and One Night, Volume IV
+  -   0.031 [92] Life and Travel in India Being Recollections of a Journey Be
 
 angling with artificial lures for river salmonids [keyword (BM25)]
 
@@ -235,11 +235,11 @@ angling with artificial lures for river salmonids [semantic]
   -   0.512 [112] The Jade Story Book; Stories from the Orient
 
 angling with artificial lures for river salmonids [hybrid (RRF)]
-  -   0.016 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
-  +   0.016 [130] Minor tactics of the chalk stream and kindred studies
-  +   0.016 [75] Fishing with Floating Flies
-  -   0.016 [0] English Housewifry Exemplified in above Four Hundred and Fif
-  -   0.015 [112] The Jade Story Book; Stories from the Orient
+  -   0.033 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
+  +   0.033 [130] Minor tactics of the chalk stream and kindred studies
+  +   0.032 [75] Fishing with Floating Flies
+  -   0.030 [142] Narrative and Legendary Poems, Complete Volume I of The Work
+  -   0.029 [112] The Jade Story Book; Stories from the Orient
 
 hospitals for people with mental illness [keyword (BM25)]
   +   7.729 [41] Chapters in the History of the Insane in the British Isles
@@ -258,9 +258,9 @@ hospitals for people with mental illness [semantic]
 hospitals for people with mental illness [hybrid (RRF)]
   +   0.033 [41] Chapters in the History of the Insane in the British Isles
   +   0.032 [48] Psychotherapy Including the History of the Use of Mental Inf
+  +   0.032 [95] Colony Treatment of the Insane and Other Defectives
   -   0.031 [92] Life and Travel in India Being Recollections of a Journey Be
   -   0.030 [62] Our War with Spain for Cuba's Freedom
-  -   0.029 [120] Military Reminiscences of the Civil War, Volume 2: November 
 
 caring for colonies of pollinating insects [keyword (BM25)]
 
@@ -272,11 +272,11 @@ caring for colonies of pollinating insects [semantic]
   -   0.465 [44] Naval Warfare
 
 caring for colonies of pollinating insects [hybrid (RRF)]
-  +   0.016 [29] Mysteries of Bee-keeping Explained
-  -   0.016 [52] The Adventures of a Grain of Dust
-  -   0.016 [8] The Pleasures of Ignorance
-  -   0.016 [95] Colony Treatment of the Insane and Other Defectives
-  -   0.015 [44] Naval Warfare
+  -   0.032 [52] The Adventures of a Grain of Dust
+  -   0.031 [95] Colony Treatment of the Insane and Other Defectives
+  -   0.031 [8] The Pleasures of Ignorance
+  +   0.030 [29] Mysteries of Bee-keeping Explained
+  -   0.030 [75] Fishing with Floating Flies
 
 biography of the father of rail transport [keyword (BM25)]
   +   6.763 [76] The Life of George Stephenson and of his Son Robert Stephens
@@ -294,10 +294,10 @@ biography of the father of rail transport [semantic]
 
 biography of the father of rail transport [hybrid (RRF)]
   +   0.033 [76] The Life of George Stephenson and of his Son Robert Stephens
-  -   0.030 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
-  -   0.027 [62] Our War with Spain for Cuba's Freedom
-  -   0.027 [118] A gallop among American scenery or, Sketches of American sce
-  -   0.026 [35] Biographia Scoticana (Scots Worthies) A Brief Historical Acc
+  -   0.031 [99] Looking Back
+  -   0.030 [120] Military Reminiscences of the Civil War, Volume 2: November 
+  -   0.029 [98] Motion pictures, 1950-1959 : Catalog of copyright entries
+  -   0.028 [47] Charles Lever, His Life in His Letters, Vol. I
 
 how chimpanzees and gorillas communicate [keyword (BM25)]
   +  20.499 [114] Apes and Monkeys: Their Life and Language
@@ -311,7 +311,7 @@ how chimpanzees and gorillas communicate [semantic]
 
 how chimpanzees and gorillas communicate [hybrid (RRF)]
   +   0.033 [114] Apes and Monkeys: Their Life and Language
-  -   0.016 [111] In Brightest Africa
-  -   0.016 [123] A Pet Reader
-  -   0.016 [48] Psychotherapy Including the History of the Use of Mental Inf
-  -   0.015 [76] The Life of George Stephenson and of his Son Robert Stephens
+  -   0.032 [111] In Brightest Africa
+  -   0.028 [102] The American Electro Magnetic Telegraph With the Reports of 
+  -   0.028 [76] The Life of George Stephenson and of his Son Robert Stephens
+  -   0.027 [48] Psychotherapy Including the History of the Use of Mental Inf

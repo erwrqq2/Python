@@ -1,6 +1,6 @@
 [project]
 name = "findex"
-version = "0.7.0"
+version = "1.0.0"
 description = "A small full-text search engine built lab by lab"
 readme = "README.md"
 authors = [

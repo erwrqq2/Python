@@ -40,6 +40,39 @@ type FloatArray = NDArray[np.float64]
 type Mode = Literal["keyword", "semantic", "hybrid"]
 MODES: Final[tuple[Mode, ...]] = ("keyword", "semantic", "hybrid")
 RRF_K: Final = 60  # Reciprocal Rank Fusion constant (Cormack et al., 2009)
+STOPWORDS: Final = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "of",
+        "and",
+        "or",
+        "to",
+        "in",
+        "on",
+        "at",
+        "for",
+        "with",
+        "about",
+        "by",
+        "from",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "how",
+        "what",
+        "who",
+        "which",
+        "that",
+        "this",
+        "it",
+        "as",
+        "into",
+    ]
+)
 
 
 def bm25_scores(
@@ -133,6 +166,18 @@ class VectorSearcher:
         scores = ARRAY_SCORERS[scorer](self.index, terms)
         return top_k(self.match(tree), scores, k)
 
+    def bag_of_words(self, text: str, scorer: ScorerName, k: int) -> list[tuple[int, float]]:
+        """BM25 over the query's content words, any of them (OR), no Boolean structure.
+
+        Hybrid mode takes a natural-language query: a strict AND over every word ("a book
+        about a robot") would keep only documents that contain "a" and "about" too, and
+        RRF would then reward exactly those."""
+        from findex.tokenize import tokenize
+
+        terms = [t for t in dict.fromkeys(tokenize(text)) if t not in STOPWORDS]
+        scores = ARRAY_SCORERS[scorer](self.index, terms)
+        return top_k(np.flatnonzero(scores > 0).astype(np.int64), scores, k)
+
     @timed
     def search(
         self,
@@ -155,10 +200,7 @@ class VectorSearcher:
             if mode == "semantic":
                 ranked = semantic
             else:
-                try:
-                    keyword = self.keyword(parse(text), scorer, pool)
-                except ValueError:  # not a valid keyword query: fuse semantic alone
-                    keyword = []
+                keyword = self.bag_of_words(text, scorer, pool)
                 fused = rrf([[d for d, _ in keyword], [d for d, _ in semantic]])
                 ranked = sorted(fused.items(), key=lambda item: (-item[1], item[0]))[:k]
         terms = _query_words(text)

@@ -44,7 +44,7 @@ from findex.rank import SearchResult
 from findex.semantic import SemanticIndex
 from findex.snippet import terms_regex
 from findex.tokenize import tokenize
-from findex.vector import Mode, VectorSearcher
+from findex.vector import STOPWORDS, Mode, VectorSearcher
 from findex.web.schemas import Document, ErrorBody, Health, SearchHit, SearchResponse, Stats
 from findex.web.settings import Settings, get_settings
 
@@ -123,39 +123,6 @@ Page = Annotated[int, Query(ge=1, le=1000, description="Page number, from 1")]
 ScorerParam = Literal["bm25", "tfidf"]
 ModeParam = Literal["keyword", "semantic", "hybrid"]
 SEMANTIC_POOL = 100  # semantic/hybrid rankings are cut at this depth
-STOPWORDS = frozenset(
-    [
-        "a",
-        "an",
-        "the",
-        "of",
-        "and",
-        "or",
-        "to",
-        "in",
-        "on",
-        "at",
-        "for",
-        "with",
-        "about",
-        "by",
-        "from",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "how",
-        "what",
-        "who",
-        "which",
-        "that",
-        "this",
-        "it",
-        "as",
-        "into",
-    ]
-)
 
 
 # --- the search itself (shared by the API and the HTML page) ----------------------------

@@ -176,9 +176,9 @@ def test_semantic_index_save_load(tmp_path: Path, semantic: SemanticIndex) -> No
 
 def test_hybrid_fuses_keyword_and_semantic(index_pos: Index, semantic: SemanticIndex) -> None:
     searcher = VectorSearcher(ArrayIndex.from_index(index_pos), semantic=semantic)
-    keyword = [r.doc_id for r in searcher.search("ship", k=4)]
-    sem = [r.doc_id for r in searcher.search("ship", k=4, mode="semantic")]
-    hybrid = searcher.search("ship", k=4, mode="hybrid")
+    keyword = [d for d, _ in searcher.bag_of_words("the ship", "bm25", 100)]  # "the" dropped
+    sem = [r.doc_id for r in searcher.search("the ship", k=100, mode="semantic")]
+    hybrid = searcher.search("the ship", k=4, mode="hybrid")
     fused = rrf([keyword, sem])
     assert [r.doc_id for r in hybrid] == sorted(fused, key=lambda d: (-fused[d], d))[:4]
     assert hybrid[0].score == pytest.approx(max(fused.values()))
